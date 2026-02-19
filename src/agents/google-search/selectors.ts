@@ -27,7 +27,25 @@ export const CAPTCHA_INDICATORS = [
   'recaptcha',
   'captcha',
   'unusual traffic',
+  'verify you are human',
   'verifique que você é humano',
   'verificare che sei un essere umano',
   'nossa systems have detected'
+];
+
+export const CAPTCHA_SELECTORS = [
+  'iframe[src*="recaptcha"]',
+  'iframe[src*="hcaptcha.com"]',
+  'iframe[src*="challenges.cloudflare.com"]',
+  '#captcha',
+  '#recaptcha',
+  '.g-recaptcha',
+  'form#captcha-form'
+];
+
+export const CAPTCHA_FRAME_PATTERNS = [
+  'recaptcha/api2/anchor',
+  'recaptcha/api2/bframe',
+  'hcaptcha.com',
+  'challenges.cloudflare.com'
 ];

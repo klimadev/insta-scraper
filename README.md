@@ -84,12 +84,13 @@ O GitHub Actions ira automaticamente:
 - Node.js 20 + TypeScript 5
 - Playwright (automacao browser)
 - chalk v4 + ora v5 (CLI)
-- caxa (empacotamento .exe)
+- bun (empacotamento .exe)
 
 ## Pre-requisitos
 
 - Google Chrome ou Microsoft Edge instalado
 - Windows 10/11
+- Bun 1.x (para gerar o .exe via `npm run compile`)
 
 ## Licenca
 

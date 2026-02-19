@@ -1,6 +1,5 @@
 export interface BrowserConfig {
   channel: string;
-  headless: boolean;
   args: string[];
   viewport: null;
   ignoreDefaultArgs: string[];
@@ -47,7 +46,7 @@ export const ERROR_CODES: Record<string, ErrorInfo> = {
   GOOGLE_SEARCH_CAPTCHA: {
     code: 'ERR_SEARCH_004',
     message: 'CAPTCHA detectado pelo Google.',
-    action: 'Execute em modo não-headless ou aguarde alguns minutos.'
+    action: 'Resolva o CAPTCHA manualmente na janela do navegador.'
   },
   GOOGLE_SEARCH_BLOCKED: {
     code: 'ERR_SEARCH_005',

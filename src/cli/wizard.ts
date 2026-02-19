@@ -93,12 +93,6 @@ async function runGoogleWizard(metrics: MetricsCollector): Promise<void> {
         }
         return true;
       }
-    },
-    {
-      type: 'confirm',
-      name: 'headless',
-      message: 'Modo headless (sem interface)?',
-      default: false
     }
   ]);
 
@@ -107,8 +101,7 @@ async function runGoogleWizard(metrics: MetricsCollector): Promise<void> {
   try {
     const output = await runGoogleSearch({
       query: answers.query.trim(),
-      maxPages: answers.maxPages,
-      headless: answers.headless
+      maxPages: answers.maxPages
     });
 
     metrics.endOperation('google_search', {

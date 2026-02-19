@@ -1,7 +1,10 @@
-import { chromium, Browser, BrowserContext, Page } from 'playwright';
+import { Browser, BrowserContext, Page } from 'playwright';
 import { BROWSER_CONFIG, FALLBACK_CHANNELS } from '../../engine/browser-config';
 import { logger } from '../../cli/logger';
 import { ERROR_CODES } from '../../types';
+import { launchStealthBrowser } from './stealth-bootstrap';
+import { applySessionProfile, pickSessionProfile, UserAgentProfile } from './stealth-profile';
+import { humanMove, humanType } from './humanization';
 import {
   SearchResult,
   SearchOutput,
@@ -11,24 +14,30 @@ import {
 } from './types';
 import {
   GOOGLE_URL,
-  SEARCH_INPUT_ROLE,
-  SEARCH_INPUT_NAME,
   CAPTCHA_INDICATORS,
+  CAPTCHA_SELECTORS,
+  CAPTCHA_FRAME_PATTERNS,
   NEXT_PAGE_ROLE,
   NEXT_PAGE_NAME
 } from './selectors';
+
+const SEARCH_INPUT_SELECTOR = 'textarea[name="q"], input[name="q"]';
+const RESULTS_READY_SELECTOR = '#search h3, #rso h3, h3';
+const MAX_CAPTCHA_WAIT_MS = 120000;
 
 export class GoogleSearchScraper {
   private browser: Browser | null = null;
   private context: BrowserContext | null = null;
   private page: Page | null = null;
+  private sessionProfile: UserAgentProfile | null = null;
+  private captchaWaitLoopActive = false;
 
   async search(config: GoogleSearchConfig): Promise<SearchOutput> {
     const finalConfig = { ...DEFAULT_CONFIG, ...config };
     
     this.validateQuery(finalConfig.query);
     
-    await this.launchBrowser(finalConfig.headless);
+    await this.launchBrowser();
     
     try {
       await this.performSearch(finalConfig.query);
@@ -55,8 +64,9 @@ export class GoogleSearchScraper {
     }
   }
 
-  private async launchBrowser(headless: boolean): Promise<void> {
+  private async launchBrowser(): Promise<void> {
     let lastError: Error | null = null;
+    this.sessionProfile = pickSessionProfile();
 
     for (const channel of FALLBACK_CHANNELS) {
       try {
@@ -64,15 +74,24 @@ export class GoogleSearchScraper {
           logger.warn('Chrome nao encontrado, tentando Edge...');
         }
 
-        this.browser = await chromium.launch({
-          ...BROWSER_CONFIG,
-          channel: channel,
-          headless: headless
-        });
+        this.browser = await launchStealthBrowser(channel);
+
+        const profile = this.sessionProfile;
+        if (!profile) {
+          throw new Error('STEALTH_PROFILE_NOT_SET');
+        }
 
         this.context = await this.browser.newContext({
-          viewport: null
+          viewport: null,
+          locale: profile.locale,
+          timezoneId: profile.timezoneId,
+          userAgent: profile.userAgent,
+          ignoreHTTPSErrors: true,
+          javaScriptEnabled: true,
+          offline: false
         });
+
+        await applySessionProfile(this.context, profile);
 
         this.page = await this.context.newPage();
         
@@ -95,21 +114,17 @@ export class GoogleSearchScraper {
     if (!this.page) throw new Error('Page not initialized');
 
     try {
-      await this.page.goto(GOOGLE_URL, {
-        waitUntil: 'domcontentloaded',
-        timeout: 60000
-      });
+      await this.navigateWithStealth(GOOGLE_URL);
 
       await this.handleCookieConsent();
 
-      const searchInput = this.page.getByRole(SEARCH_INPUT_ROLE, { name: SEARCH_INPUT_NAME });
-      await searchInput.fill(query);
-      await searchInput.press('Enter');
+      await humanMove(this.page, SEARCH_INPUT_SELECTOR);
+      await humanType(this.page, SEARCH_INPUT_SELECTOR, query);
+      await this.page.keyboard.press('Enter');
 
       await this.page.waitForLoadState('domcontentloaded');
-      await this.page.waitForTimeout(1500);
-      
       await this.waitForCaptchaResolution();
+      await this.page.waitForSelector(RESULTS_READY_SELECTOR, { timeout: 15000 });
       
     } catch (error) {
       logger.error(
@@ -121,6 +136,25 @@ export class GoogleSearchScraper {
     }
   }
 
+  private async navigateWithStealth(url: string): Promise<void> {
+    if (!this.page || !this.context || !this.sessionProfile) {
+      throw new Error('STEALTH_NOT_INITIALIZED');
+    }
+
+    await this.context.setExtraHTTPHeaders({
+      'accept-language': this.sessionProfile.acceptLanguage,
+      'sec-ch-ua': this.sessionProfile.secChUa,
+      'sec-ch-ua-mobile': this.sessionProfile.secChUaMobile,
+      'sec-ch-ua-platform': this.sessionProfile.secChUaPlatform,
+      'upgrade-insecure-requests': '1'
+    });
+
+    await this.page.goto(url, {
+      waitUntil: 'domcontentloaded',
+      timeout: 60000
+    });
+  }
+
   private async handleCookieConsent(): Promise<void> {
     if (!this.page) return;
 
@@ -129,22 +163,19 @@ export class GoogleSearchScraper {
     try {
       await acceptButton.click({ timeout: 2000 });
     } catch {
-      // Cookie consent already accepted or not present
+      return;
     }
   }
 
   private async waitForCaptchaResolution(): Promise<void> {
     if (!this.page) return;
 
-    const hasCaptcha = async (): Promise<boolean> => {
-      const content = await this.page!.content();
-      const lowerContent = content.toLowerCase();
-      return CAPTCHA_INDICATORS.some(indicator => 
-        lowerContent.includes(indicator.toLowerCase())
-      );
-    };
+    const initialSignal = await this.detectCaptchaSignal(true);
 
-    if (!(await hasCaptcha())) return;
+    if (!initialSignal.detected) return;
+    if (this.captchaWaitLoopActive) return;
+
+    this.captchaWaitLoopActive = true;
 
     console.log('');
     console.log('════════════════════════════════════════════════════════');
@@ -153,14 +184,172 @@ export class GoogleSearchScraper {
     console.log('  Aguardando...');
     console.log('════════════════════════════════════════════════════════');
     console.log('');
+    logger.warn('CAPTCHA DETECTADO - AGUARDANDO RESOLUÇÃO MANUAL');
+    process.stdout.write('\x07');
 
-    while (await hasCaptcha()) {
-      await this.page.waitForTimeout(2000);
+    this.page.setDefaultTimeout(0);
+    this.page.setDefaultNavigationTimeout(0);
+
+    try {
+      let clearChecks = 0;
+      const deadline = Date.now() + MAX_CAPTCHA_WAIT_MS;
+
+      while (clearChecks < 3 && Date.now() < deadline) {
+        await this.page.waitForTimeout(1800);
+
+        const currentSignal = await this.detectCaptchaSignal();
+
+        if (currentSignal.detected) {
+          clearChecks = 0;
+          continue;
+        }
+
+        clearChecks += 1;
+      }
+
+      if (clearChecks < 3) {
+        logger.warn('Tempo limite de espera por CAPTCHA atingido. Continuando com a execucao.');
+      }
+    } finally {
+      this.page.setDefaultTimeout(BROWSER_CONFIG.timeout);
+      this.page.setDefaultNavigationTimeout(BROWSER_CONFIG.timeout);
+      this.captchaWaitLoopActive = false;
     }
 
     console.log('');
     console.log('  CAPTCHA resolvido! Continuando...');
     console.log('');
+  }
+
+  private async detectCaptchaSignal(withObserver: boolean = false): Promise<{ detected: boolean; targetSelector: string | null }> {
+    if (!this.page) {
+      return {
+        detected: false,
+        targetSelector: null
+      };
+    }
+
+    if (withObserver) {
+      const observedSelector = await this.observeCaptchaSelector(1200);
+      if (observedSelector) {
+        return {
+          detected: true,
+          targetSelector: observedSelector
+        };
+      }
+    }
+
+    const bySelector = await this.findCaptchaSelector();
+
+    if (bySelector) {
+      return {
+        detected: true,
+        targetSelector: bySelector
+      };
+    }
+
+    for (const frame of this.page.frames()) {
+      const frameUrl = frame.url().toLowerCase();
+      if (CAPTCHA_FRAME_PATTERNS.some(pattern => frameUrl.includes(pattern))) {
+        return {
+          detected: true,
+          targetSelector: CAPTCHA_SELECTORS[0]
+        };
+      }
+    }
+
+    const lowerContent = await this.page.evaluate(() => {
+      const text = document.body?.innerText || '';
+      return text.slice(0, 6000).toLowerCase();
+    });
+    const hasByText = CAPTCHA_INDICATORS.some(indicator =>
+      lowerContent.includes(indicator.toLowerCase())
+    );
+
+    return {
+      detected: hasByText,
+      targetSelector: hasByText ? CAPTCHA_SELECTORS[0] : null
+    };
+  }
+
+  private async findCaptchaSelector(): Promise<string | null> {
+    if (!this.page) return null;
+
+    for (const selector of CAPTCHA_SELECTORS) {
+      const visible = await this.page
+        .locator(selector)
+        .first()
+        .isVisible({ timeout: 250 })
+        .catch(() => false);
+
+      if (visible) {
+        return selector;
+      }
+    }
+
+    return null;
+  }
+
+  private async observeCaptchaSelector(timeoutMs: number): Promise<string | null> {
+    if (!this.page) return null;
+
+    const handle = await this.page.evaluateHandle(
+      ({ selectors, timeout }) => {
+        return new Promise<string | null>(resolve => {
+          const findMatch = (): string | null => {
+            for (const selector of selectors) {
+              if (document.querySelector(selector)) {
+                return selector;
+              }
+            }
+
+            return null;
+          };
+
+          const immediateMatch = findMatch();
+          if (immediateMatch) {
+            resolve(immediateMatch);
+            return;
+          }
+
+          let timer = 0;
+
+          const observer = new MutationObserver(() => {
+            const currentMatch = findMatch();
+
+            if (currentMatch) {
+              observer.disconnect();
+              clearTimeout(timer);
+              resolve(currentMatch);
+            }
+          });
+
+          observer.observe(document.documentElement, {
+            childList: true,
+            subtree: true,
+            attributes: true
+          });
+
+          timer = window.setTimeout(() => {
+            observer.disconnect();
+            resolve(null);
+          }, timeout);
+        });
+      },
+      {
+        selectors: CAPTCHA_SELECTORS,
+        timeout: timeoutMs
+      }
+    );
+
+    const result = await handle.jsonValue();
+    await handle.dispose();
+
+    if (typeof result === 'string') {
+      return result;
+    }
+
+    return null;
   }
 
   private async scrapeMultiplePages(
@@ -247,9 +436,10 @@ export class GoogleSearchScraper {
     });
 
     try {
-      await nextButton.click({ timeout: 3000 });
-      await this.page.waitForLoadState('domcontentloaded');
-      await this.page.waitForTimeout(800);
+      await Promise.all([
+        this.page.waitForLoadState('domcontentloaded', { timeout: 10000 }),
+        nextButton.click({ timeout: 3000 })
+      ]);
       return true;
     } catch {
       return false;

@@ -20,13 +20,11 @@ export interface SearchOutput {
 export interface GoogleSearchConfig {
   query: string;
   maxPages?: number;
-  headless?: boolean;
   outputFile?: string;
 }
 
 export const DEFAULT_CONFIG: Required<Omit<GoogleSearchConfig, 'query'>> = {
   maxPages: 3,
-  headless: false,
   outputFile: ''
 };
 

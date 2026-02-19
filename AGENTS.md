@@ -5,7 +5,7 @@
 ```bash
 npm run dev        # Desenvolvimento com ts-node (sem build)
 npm run build      # Compilar TypeScript → JavaScript (tsc)
-npm run compile    # Build + gerar executável .exe com caxa
+npm run compile    # Build + gerar executável .exe com bun
 ```
 
 **Sem testes configurados.**

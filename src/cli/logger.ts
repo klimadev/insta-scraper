@@ -5,6 +5,20 @@ import { MESSAGES } from './messages';
 export class Logger {
   private spinner: Ora | null = null;
 
+  private withSpinnerPaused(callback: () => void): void {
+    const hasSpinner = this.spinner !== null;
+
+    if (hasSpinner) {
+      this.spinner!.stop();
+    }
+
+    callback();
+
+    if (hasSpinner) {
+      this.spinner!.start();
+    }
+  }
+
   start(text: string): void {
     this.spinner = ora({
       text: chalk.cyan(text),
@@ -33,23 +47,29 @@ export class Logger {
   }
 
   error(code: string, message: string, action: string): void {
-    console.log('');
-    console.log(chalk.red.bold('╔══════════════════════════════════════════╗'));
-    console.log(chalk.red.bold('║           ERRO CRÍTICO                   ║'));
-    console.log(chalk.red.bold('╠══════════════════════════════════════════╣'));
-    console.log(chalk.red.bold('║') + chalk.yellow(` Código: ${code}`.padEnd(43)) + chalk.red.bold('║'));
-    console.log(chalk.red.bold('║') + chalk.white(` ${message}`.padEnd(43)) + chalk.red.bold('║'));
-    console.log(chalk.red.bold('║') + chalk.gray(` Ação: ${action}`.padEnd(43)) + chalk.red.bold('║'));
-    console.log(chalk.red.bold('╚══════════════════════════════════════════╝'));
-    console.log('');
+    this.withSpinnerPaused(() => {
+      console.log('');
+      console.log(chalk.red.bold('╔══════════════════════════════════════════╗'));
+      console.log(chalk.red.bold('║           ERRO CRÍTICO                   ║'));
+      console.log(chalk.red.bold('╠══════════════════════════════════════════╣'));
+      console.log(chalk.red.bold('║') + chalk.yellow(` Código: ${code}`.padEnd(43)) + chalk.red.bold('║'));
+      console.log(chalk.red.bold('║') + chalk.white(` ${message}`.padEnd(43)) + chalk.red.bold('║'));
+      console.log(chalk.red.bold('║') + chalk.gray(` Ação: ${action}`.padEnd(43)) + chalk.red.bold('║'));
+      console.log(chalk.red.bold('╚══════════════════════════════════════════╝'));
+      console.log('');
+    });
   }
 
   info(text: string): void {
-    console.log(chalk.blue('ℹ') + ' ' + chalk.white(text));
+    this.withSpinnerPaused(() => {
+      console.log(chalk.blue('ℹ') + ' ' + chalk.white(text));
+    });
   }
 
   warn(text: string): void {
-    console.log(chalk.yellow('⚠') + ' ' + chalk.yellow(text));
+    this.withSpinnerPaused(() => {
+      console.log(chalk.yellow('⚠') + ' ' + chalk.yellow(text));
+    });
   }
 
   header(): void {

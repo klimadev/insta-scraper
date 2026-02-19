@@ -11,7 +11,6 @@ function showHelp(): void {
   console.log('');
   console.log('Opções Google:');
   console.log('  --pages=N   Número de páginas (padrão: 3)');
-  console.log('  --headless  Executar em modo headless');
   console.log('');
   console.log('Sem argumentos: inicia o wizard interativo');
   console.log('');
@@ -21,20 +20,17 @@ function showHelp(): void {
 async function runGoogle(args: string[]): Promise<void> {
   if (args.length === 0) {
     console.log('');
-    console.log('Uso: insta-launcher google "termo de busca" [--pages=3] [--headless]');
+    console.log('Uso: insta-launcher google "termo de busca" [--pages=3]');
     console.log('');
     process.exit(1);
   }
 
   let query = '';
   let maxPages = 3;
-  let headless = false;
 
   for (const arg of args) {
     if (arg.startsWith('--pages=')) {
       maxPages = parseInt(arg.split('=')[1], 10) || 3;
-    } else if (arg === '--headless') {
-      headless = true;
     } else if (arg === '--help' || arg === '-h') {
       showHelp();
     } else if (!arg.startsWith('--')) {
@@ -48,8 +44,7 @@ async function runGoogle(args: string[]): Promise<void> {
   try {
     const output = await runGoogleSearch({
       query,
-      maxPages,
-      headless
+      maxPages
     });
 
     metrics.endOperation('google_search', {
