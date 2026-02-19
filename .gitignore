@@ -1,6 +1,7 @@
 node_modules/
 dist/
 out/
+output/
 *.log
 .DS_Store
 sea-prep.blob
