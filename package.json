@@ -6,7 +6,7 @@
   "bin": "dist/index.js",
   "scripts": {
     "dev": "ts-node src/index.ts",
-    "dev:google": "ts-node src/google-search-cli.ts",
+    "dev:google": "ts-node src/index.ts google",
     "build": "rimraf dist && tsc",
     "compile": "npm run build && rimraf out && npx caxa --input . --output out/insta-launcher.exe -- node dist/index.js"
   },
