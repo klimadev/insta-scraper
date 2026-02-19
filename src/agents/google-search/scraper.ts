@@ -113,12 +113,9 @@ export class GoogleSearchScraper {
       await this.page.waitForLoadState('domcontentloaded');
       await this.delay(2000);
       
-      await this.detectCaptcha();
+      await this.waitForCaptchaResolution();
       
     } catch (error) {
-      const err = error as Error;
-      if (err.message === 'CAPTCHA_DETECTED') throw error;
-      
       logger.error(
         ERROR_CODES.GOOGLE_SEARCH_TIMEOUT.code,
         ERROR_CODES.GOOGLE_SEARCH_TIMEOUT.message,
@@ -151,24 +148,35 @@ export class GoogleSearchScraper {
     }
   }
 
-  private async detectCaptcha(): Promise<void> {
+  private async waitForCaptchaResolution(): Promise<void> {
     if (!this.page) return;
 
-    const content = await this.page.content();
-    const lowerContent = content.toLowerCase();
-    
-    const hasCaptcha = CAPTCHA_INDICATORS.some(indicator => 
-      lowerContent.includes(indicator.toLowerCase())
-    );
-
-    if (hasCaptcha) {
-      logger.error(
-        ERROR_CODES.GOOGLE_SEARCH_CAPTCHA.code,
-        ERROR_CODES.GOOGLE_SEARCH_CAPTCHA.message,
-        ERROR_CODES.GOOGLE_SEARCH_CAPTCHA.action
+    const hasCaptcha = async (): Promise<boolean> => {
+      const content = await this.page!.content();
+      const lowerContent = content.toLowerCase();
+      return CAPTCHA_INDICATORS.some(indicator => 
+        lowerContent.includes(indicator.toLowerCase())
       );
-      throw new Error('CAPTCHA_DETECTED');
+    };
+
+    if (!(await hasCaptcha())) return;
+
+    console.log('');
+    console.log('════════════════════════════════════════════════════════');
+    console.log('  CAPTCHA detectado!');
+    console.log('  Por favor, resolva manualmente no browser aberto.');
+    console.log('  Aguardando...');
+    console.log('════════════════════════════════════════════════════════');
+    console.log('');
+
+    while (await hasCaptcha()) {
+      await this.delay(2000);
     }
+
+    console.log('');
+    console.log('  CAPTCHA resolvido! Continuando...');
+    console.log('');
+    await this.delay(1000);
   }
 
   private async scrapeMultiplePages(
