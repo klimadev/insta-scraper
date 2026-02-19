@@ -28,5 +28,30 @@ export const ERROR_CODES: Record<string, ErrorInfo> = {
     code: 'ERR_NET_001',
     message: 'Falha ao conectar ao Instagram.',
     action: 'Verifique sua conexão com a internet.'
+  },
+  GOOGLE_SEARCH_EMPTY_QUERY: {
+    code: 'ERR_SEARCH_001',
+    message: 'Query de busca não pode estar vazia.',
+    action: 'Forneça um termo de busca válido.'
+  },
+  GOOGLE_SEARCH_NO_RESULTS: {
+    code: 'ERR_SEARCH_002',
+    message: 'Nenhum resultado encontrado.',
+    action: 'Tente uma query diferente.'
+  },
+  GOOGLE_SEARCH_TIMEOUT: {
+    code: 'ERR_SEARCH_003',
+    message: 'Timeout ao aguardar resultados.',
+    action: 'Verifique sua conexão ou tente novamente.'
+  },
+  GOOGLE_SEARCH_CAPTCHA: {
+    code: 'ERR_SEARCH_004',
+    message: 'CAPTCHA detectado pelo Google.',
+    action: 'Execute em modo não-headless ou aguarde alguns minutos.'
+  },
+  GOOGLE_SEARCH_BLOCKED: {
+    code: 'ERR_SEARCH_005',
+    message: 'Acesso bloqueado pelo Google.',
+    action: 'Mude de IP ou aguarde alguns minutos.'
   }
 };

@@ -5,5 +5,8 @@ export const MESSAGES = {
   OPEN_INSTAGRAM: 'Abrindo Instagram...',
   SUCCESS: 'Concluído!',
   ERROR_PREFIX: 'Erro:',
-  FALLBACK_EDGE: 'Chrome não encontrado, tentando Edge...'
+  FALLBACK_EDGE: 'Chrome não encontrado, tentando Edge...',
+  GOOGLE_CONNECTING: 'Conectando ao Google...',
+  GOOGLE_EXTRACTING: 'Extraindo página',
+  GOOGLE_RESULTS: 'resultados extraídos'
 };
