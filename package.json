@@ -12,10 +12,12 @@
   },
   "dependencies": {
     "chalk": "^4.1.2",
+    "inquirer": "^8.2.7",
     "ora": "^5.4.1",
     "playwright": "^1.30.0"
   },
   "devDependencies": {
+    "@types/inquirer": "^9.0.9",
     "@types/node": "^20.10.0",
     "caxa": "^3.0.1",
     "rimraf": "^5.0.0",
