@@ -1,14 +1,13 @@
-import { Launcher } from './engine/launcher';
 import { runGoogleSearch } from './agents/google-search';
 import { logger } from './cli/logger';
 import { showWizard } from './cli/wizard';
+import { MetricsCollector } from './cli/metrics';
 
 function showHelp(): void {
   console.log('');
   console.log('Uso:');
   console.log('  insta-launcher                    Abre wizard interativo');
   console.log('  insta-launcher google "query"     Busca no Google e extrai resultados');
-  console.log('  insta-launcher instagram          Abre Instagram no browser');
   console.log('');
   console.log('Opções Google:');
   console.log('  --pages=N   Número de páginas (padrão: 3)');
@@ -17,21 +16,6 @@ function showHelp(): void {
   console.log('Sem argumentos: inicia o wizard interativo');
   console.log('');
   process.exit(0);
-}
-
-async function runInstagram(): Promise<void> {
-  const launcher = new Launcher();
-  
-  try {
-    await launcher.launch();
-  } catch (error) {
-    const err = error as Error;
-    if (!err.message.includes('CHROME_NOT_FOUND') && !err.message.includes('NETWORK_ERROR')) {
-      logger.fail('Erro inesperado');
-      console.error(error);
-    }
-    process.exit(1);
-  }
 }
 
 async function runGoogle(args: string[]): Promise<void> {
@@ -58,13 +42,26 @@ async function runGoogle(args: string[]): Promise<void> {
     }
   }
 
+  const metrics = new MetricsCollector();
+  metrics.startOperation('google_search');
+
   try {
-    await runGoogleSearch({
+    const output = await runGoogleSearch({
       query,
       maxPages,
       headless
     });
+
+    metrics.endOperation('google_search', {
+      query,
+      resultsCount: output.totalResults,
+      pagesScanned: output.totalPages
+    });
+
+    metrics.printSummary();
   } catch (error) {
+    metrics.recordError('google_search');
+    metrics.printSummary();
     process.exit(1);
   }
 }
@@ -79,8 +76,6 @@ async function main(): Promise<void> {
 
   if (command === 'google') {
     await runGoogle(args.slice(1));
-  } else if (command === 'instagram') {
-    await runInstagram();
   } else {
     await showWizard();
   }

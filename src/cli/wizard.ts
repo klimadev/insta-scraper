@@ -1,10 +1,11 @@
 import inquirer from 'inquirer';
-import { Launcher } from '../engine/launcher';
 import { runGoogleSearch } from '../agents/google-search';
 import { logger } from './logger';
+import { MetricsCollector } from './metrics';
 
 export async function showWizard(): Promise<void> {
   let running = true;
+  const metrics = new MetricsCollector();
 
   while (running) {
     logger.header();
@@ -15,9 +16,9 @@ export async function showWizard(): Promise<void> {
         name: 'action',
         message: 'O que deseja fazer?',
         choices: [
-          { name: 'Abrir Instagram', value: 'instagram' },
           { name: 'Pesquisar no Google', value: 'google' },
           new inquirer.Separator(),
+          { name: 'Ver metricas da sessao', value: 'metrics' },
           { name: 'Sair', value: 'exit' }
         ]
       }
@@ -25,15 +26,16 @@ export async function showWizard(): Promise<void> {
 
     try {
       switch (action) {
-        case 'instagram':
-          await runInstagramWizard();
-          break;
         case 'google':
-          await runGoogleWizard();
+          await runGoogleWizard(metrics);
+          break;
+        case 'metrics':
+          metrics.printSummary();
           break;
         case 'exit':
           running = false;
           console.log('');
+          metrics.printSummary();
           console.log('Ate logo!');
           console.log('');
           break;
@@ -59,6 +61,7 @@ export async function showWizard(): Promise<void> {
       if (!continueWizard) {
         running = false;
         console.log('');
+        metrics.printSummary();
         console.log('Ate logo!');
         console.log('');
       }
@@ -66,12 +69,7 @@ export async function showWizard(): Promise<void> {
   }
 }
 
-async function runInstagramWizard(): Promise<void> {
-  const launcher = new Launcher();
-  await launcher.launch();
-}
-
-async function runGoogleWizard(): Promise<void> {
+async function runGoogleWizard(metrics: MetricsCollector): Promise<void> {
   const answers = await inquirer.prompt([
     {
       type: 'input',
@@ -104,9 +102,22 @@ async function runGoogleWizard(): Promise<void> {
     }
   ]);
 
-  await runGoogleSearch({
-    query: answers.query.trim(),
-    maxPages: answers.maxPages,
-    headless: answers.headless
-  });
+  metrics.startOperation('google_search');
+
+  try {
+    const output = await runGoogleSearch({
+      query: answers.query.trim(),
+      maxPages: answers.maxPages,
+      headless: answers.headless
+    });
+
+    metrics.endOperation('google_search', {
+      query: answers.query,
+      resultsCount: output.totalResults,
+      pagesScanned: output.totalPages
+    });
+  } catch (error) {
+    metrics.recordError('google_search');
+    throw error;
+  }
 }

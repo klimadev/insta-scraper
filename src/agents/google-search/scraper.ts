@@ -29,18 +29,19 @@ export class GoogleSearchScraper {
     this.validateQuery(finalConfig.query);
     
     await this.launchBrowser(finalConfig.headless);
-    await this.performSearch(finalConfig.query);
     
-    const results = await this.scrapeMultiplePages(
-      finalConfig.query,
-      finalConfig.maxPages
-    );
-    
-    const output = this.buildOutput(finalConfig.query, finalConfig.maxPages, results);
-    
-    await this.closeBrowser();
-    
-    return output;
+    try {
+      await this.performSearch(finalConfig.query);
+      
+      const results = await this.scrapeMultiplePages(
+        finalConfig.query,
+        finalConfig.maxPages
+      );
+      
+      return this.buildOutput(finalConfig.query, finalConfig.maxPages, results);
+    } finally {
+      await this.closeBrowser();
+    }
   }
 
   private validateQuery(query: string): void {
@@ -60,7 +61,7 @@ export class GoogleSearchScraper {
     for (const channel of FALLBACK_CHANNELS) {
       try {
         if (channel === 'msedge') {
-          logger.warn('Chrome não encontrado, tentando Edge...');
+          logger.warn('Chrome nao encontrado, tentando Edge...');
         }
 
         this.browser = await chromium.launch({
@@ -99,19 +100,14 @@ export class GoogleSearchScraper {
         timeout: 60000
       });
 
-      await this.delay(1000);
-
       await this.handleCookieConsent();
-
-      await this.delay(500);
 
       const searchInput = this.page.getByRole(SEARCH_INPUT_ROLE, { name: SEARCH_INPUT_NAME });
       await searchInput.fill(query);
-      await this.delay(300);
       await searchInput.press('Enter');
 
       await this.page.waitForLoadState('domcontentloaded');
-      await this.delay(2000);
+      await this.page.waitForTimeout(1500);
       
       await this.waitForCaptchaResolution();
       
@@ -128,23 +124,12 @@ export class GoogleSearchScraper {
   private async handleCookieConsent(): Promise<void> {
     if (!this.page) return;
 
-    const acceptButtons = [
-      this.page.getByRole('button', { name: /aceitar|accept|concordo|i agree/i }),
-      this.page.locator('#L2AGLb'),
-      this.page.locator('button:has-text("Aceitar")'),
-      this.page.locator('button:has-text("Accept")')
-    ];
-
-    for (const button of acceptButtons) {
-      try {
-        if (await button.count() > 0) {
-          await button.first().click();
-          await this.delay(500);
-          return;
-        }
-      } catch {
-        continue;
-      }
+    const acceptButton = this.page.locator('#L2AGLb, button:has-text("Aceitar"), button:has-text("Accept")').first();
+    
+    try {
+      await acceptButton.click({ timeout: 2000 });
+    } catch {
+      // Cookie consent already accepted or not present
     }
   }
 
@@ -170,13 +155,12 @@ export class GoogleSearchScraper {
     console.log('');
 
     while (await hasCaptcha()) {
-      await this.delay(2000);
+      await this.page.waitForTimeout(2000);
     }
 
     console.log('');
     console.log('  CAPTCHA resolvido! Continuando...');
     console.log('');
-    await this.delay(1000);
   }
 
   private async scrapeMultiplePages(
@@ -186,10 +170,10 @@ export class GoogleSearchScraper {
     const allResults: SearchResult[] = [];
 
     for (let currentPage = 1; currentPage <= maxPages; currentPage++) {
-      logger.update(`Extraindo página ${currentPage}...`);
+      logger.update(`Extraindo pagina ${currentPage}...`);
       
       try {
-        await this.page!.waitForSelector('h3', { timeout: 15000 });
+        await this.page!.waitForSelector('h3', { timeout: 10000 });
       } catch {
         break;
       }
@@ -218,42 +202,39 @@ export class GoogleSearchScraper {
 
   private async extractResultsFromPage(): Promise<ExtractedResult[]> {
     return await this.page!.evaluate(() => {
-      const data: { title: string; url: string; description: string }[] = [];
+      const data: ExtractedResult[] = [];
       const main = document.querySelector('#rso, [role="main"]');
       if (!main) return data;
 
-      const items = main.querySelectorAll('div[data-hveid]');
+      const items = Array.from(main.querySelectorAll('div[data-hveid]'));
 
-      items.forEach((item: Element) => {
+      for (const item of items) {
         const h3 = item.querySelector('h3');
         const a = item.querySelector('a[href^="http"]');
 
-        if (!h3 || !a) return;
+        if (!h3 || !a) continue;
 
         const title = h3.textContent?.trim() || '';
-        let description = '';
+        const url = a.getAttribute('href') || '';
+        
+        if (!url || url.includes('google.com/search') || url.includes('accounts.google')) {
+          continue;
+        }
 
+        let description = '';
         const spans = Array.from(item.querySelectorAll('span, div'));
         for (const span of spans) {
           const text = span.textContent?.trim() || '';
           if (text.length > 50 && text !== title) {
-            description = text;
+            description = text.substring(0, 300);
             break;
           }
         }
 
-        data.push({
-          title,
-          url: a.getAttribute('href') || '',
-          description: description.substring(0, 300)
-        });
-      });
+        data.push({ title, url, description });
+      }
 
-      return data.filter(r =>
-        r.url &&
-        !r.url.includes('google.com/search') &&
-        !r.url.includes('accounts.google')
-      );
+      return data;
     });
   }
 
@@ -265,15 +246,14 @@ export class GoogleSearchScraper {
       exact: true 
     });
 
-    const count = await nextButton.count();
-    if (count === 0) return false;
-
-    await nextButton.click();
-    await this.page.waitForLoadState('domcontentloaded');
-    
-    await this.delay(1000);
-    
-    return true;
+    try {
+      await nextButton.click({ timeout: 3000 });
+      await this.page.waitForLoadState('domcontentloaded');
+      await this.page.waitForTimeout(800);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   private buildOutput(
@@ -297,9 +277,5 @@ export class GoogleSearchScraper {
       this.context = null;
       this.page = null;
     }
-  }
-
-  private delay(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
   }
 }
