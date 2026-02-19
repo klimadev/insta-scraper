@@ -24,9 +24,14 @@ async function run(): Promise<void> {
 
   const context = await browser.newContext({
     viewport: null,
+    colorScheme: 'light',
     locale: profile.locale,
     timezoneId: profile.timezoneId,
-    userAgent: profile.userAgent
+    userAgent: profile.userAgent,
+    storageState: {
+      cookies: [],
+      origins: []
+    }
   });
 
   await applySessionProfile(context, profile);

@@ -24,6 +24,12 @@ import {
 const SEARCH_INPUT_SELECTOR = 'textarea[name="q"], input[name="q"]';
 const RESULTS_READY_SELECTOR = '#search h3, #rso h3, h3';
 const MAX_CAPTCHA_WAIT_MS = 120000;
+const TRANSIENT_NAVIGATION_ERRORS = [
+  'execution context was destroyed',
+  'cannot find context with specified id',
+  'target closed',
+  'most likely because of a navigation'
+];
 
 export class GoogleSearchScraper {
   private browser: Browser | null = null;
@@ -83,9 +89,14 @@ export class GoogleSearchScraper {
 
         this.context = await this.browser.newContext({
           viewport: null,
+          colorScheme: 'light',
           locale: profile.locale,
           timezoneId: profile.timezoneId,
           userAgent: profile.userAgent,
+          storageState: {
+            cookies: [],
+            origins: []
+          },
           ignoreHTTPSErrors: true,
           javaScriptEnabled: true,
           offline: false
@@ -124,7 +135,7 @@ export class GoogleSearchScraper {
 
       await this.page.waitForLoadState('domcontentloaded');
       await this.waitForCaptchaResolution();
-      await this.page.waitForSelector(RESULTS_READY_SELECTOR, { timeout: 15000 });
+      await this.waitForResultsReady();
       
     } catch (error) {
       logger.error(
@@ -145,8 +156,7 @@ export class GoogleSearchScraper {
       'accept-language': this.sessionProfile.acceptLanguage,
       'sec-ch-ua': this.sessionProfile.secChUa,
       'sec-ch-ua-mobile': this.sessionProfile.secChUaMobile,
-      'sec-ch-ua-platform': this.sessionProfile.secChUaPlatform,
-      'upgrade-insecure-requests': '1'
+      'sec-ch-ua-platform': this.sessionProfile.secChUaPlatform
     });
 
     await this.page.goto(url, {
@@ -170,10 +180,31 @@ export class GoogleSearchScraper {
   private async waitForCaptchaResolution(): Promise<void> {
     if (!this.page) return;
 
-    const initialSignal = await this.detectCaptchaSignal(true);
+    let initialSignal = await this.detectCaptchaSignal(true);
 
     if (!initialSignal.detected) return;
     if (this.captchaWaitLoopActive) return;
+
+    const interactiveChallengeReady = await this.hasInteractiveCaptchaChallenge();
+
+    if (!interactiveChallengeReady) {
+      logger.warn('CAPTCHA sem widget visivel. Recarregando para tentar renderizar desafio.');
+
+      try {
+        await this.page.reload({
+          waitUntil: 'domcontentloaded',
+          timeout: 60000
+        });
+        await this.page.waitForTimeout(1200);
+        initialSignal = await this.detectCaptchaSignal(true);
+      } catch {
+        return;
+      }
+
+      if (!initialSignal.detected) {
+        return;
+      }
+    }
 
     this.captchaWaitLoopActive = true;
 
@@ -221,6 +252,24 @@ export class GoogleSearchScraper {
     console.log('');
   }
 
+  private async hasInteractiveCaptchaChallenge(): Promise<boolean> {
+    if (!this.page) return false;
+
+    const bySelector = await this.findCaptchaSelector();
+    if (bySelector) {
+      return true;
+    }
+
+    for (const frame of this.page.frames()) {
+      const frameUrl = frame.url().toLowerCase();
+      if (CAPTCHA_FRAME_PATTERNS.some(pattern => frameUrl.includes(pattern))) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
   private async detectCaptchaSignal(withObserver: boolean = false): Promise<{ detected: boolean; targetSelector: string | null }> {
     if (!this.page) {
       return {
@@ -261,6 +310,12 @@ export class GoogleSearchScraper {
     const lowerContent = await this.page.evaluate(() => {
       const text = document.body?.innerText || '';
       return text.slice(0, 6000).toLowerCase();
+    }).catch((error: unknown) => {
+      if (this.isTransientNavigationError(error)) {
+        return '';
+      }
+
+      throw error;
     });
     const hasByText = CAPTCHA_INDICATORS.some(indicator =>
       lowerContent.includes(indicator.toLowerCase())
@@ -293,63 +348,98 @@ export class GoogleSearchScraper {
   private async observeCaptchaSelector(timeoutMs: number): Promise<string | null> {
     if (!this.page) return null;
 
-    const handle = await this.page.evaluateHandle(
-      ({ selectors, timeout }) => {
-        return new Promise<string | null>(resolve => {
-          const findMatch = (): string | null => {
-            for (const selector of selectors) {
-              if (document.querySelector(selector)) {
-                return selector;
-              }
+    try {
+      const handle = await this.page.waitForFunction(
+        (selectors: string[]) => {
+          for (const selector of selectors) {
+            if (document.querySelector(selector)) {
+              return selector;
             }
-
-            return null;
-          };
-
-          const immediateMatch = findMatch();
-          if (immediateMatch) {
-            resolve(immediateMatch);
-            return;
           }
 
-          let timer = 0;
+          return null;
+        },
+        CAPTCHA_SELECTORS,
+        {
+          timeout: timeoutMs
+        }
+      );
 
-          const observer = new MutationObserver(() => {
-            const currentMatch = findMatch();
+      const result = await handle.jsonValue();
+      await handle.dispose();
 
-            if (currentMatch) {
-              observer.disconnect();
-              clearTimeout(timer);
-              resolve(currentMatch);
-            }
-          });
-
-          observer.observe(document.documentElement, {
-            childList: true,
-            subtree: true,
-            attributes: true
-          });
-
-          timer = window.setTimeout(() => {
-            observer.disconnect();
-            resolve(null);
-          }, timeout);
-        });
-      },
-      {
-        selectors: CAPTCHA_SELECTORS,
-        timeout: timeoutMs
+      if (typeof result === 'string') {
+        return result;
       }
-    );
 
-    const result = await handle.jsonValue();
-    await handle.dispose();
+      return null;
+    } catch (error) {
+      if (this.isTransientNavigationError(error)) {
+        return null;
+      }
 
-    if (typeof result === 'string') {
-      return result;
+      if (error instanceof Error && error.message.toLowerCase().includes('timeout')) {
+        return null;
+      }
+
+      throw error;
+    }
+  }
+
+  private async waitForResultsReady(timeoutMs: number = 15000): Promise<void> {
+    if (!this.page) throw new Error('Page not initialized');
+
+    const deadline = Date.now() + timeoutMs;
+    let lastError: unknown = null;
+
+    while (Date.now() < deadline) {
+      const remaining = Math.max(deadline - Date.now(), 1);
+
+      try {
+        await this.page.waitForSelector(RESULTS_READY_SELECTOR, {
+          timeout: Math.min(2500, remaining)
+        });
+        return;
+      } catch (error) {
+        lastError = error;
+
+        if (this.isTransientNavigationError(error)) {
+          await this.waitForStableDom();
+          continue;
+        }
+
+        if (error instanceof Error && error.message.toLowerCase().includes('timeout')) {
+          continue;
+        }
+
+        throw error;
+      }
     }
 
-    return null;
+    if (lastError instanceof Error) {
+      throw lastError;
+    }
+
+    throw new Error('RESULTS_TIMEOUT');
+  }
+
+  private async waitForStableDom(): Promise<void> {
+    if (!this.page) return;
+
+    try {
+      await this.page.waitForLoadState('domcontentloaded', { timeout: 5000 });
+    } catch {
+      return;
+    }
+  }
+
+  private isTransientNavigationError(error: unknown): boolean {
+    if (!(error instanceof Error)) {
+      return false;
+    }
+
+    const message = error.message.toLowerCase();
+    return TRANSIENT_NAVIGATION_ERRORS.some(fragment => message.includes(fragment));
   }
 
   private async scrapeMultiplePages(

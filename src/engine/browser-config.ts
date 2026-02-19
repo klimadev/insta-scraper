@@ -14,6 +14,8 @@ export const BROWSER_CONFIG: BrowserConfig = {
     '--disable-plugins',
     '--disable-sync',
     '--no-first-run',
+    '--no-default-browser-check',
+    '--disable-features=TrackingProtection3pcd,ImprovedCookieControls',
     '--disable-background-networking',
     '--disable-default-apps',
     '--disable-translate',

@@ -61,8 +61,7 @@ export async function applySessionProfile(
     'accept-language': profile.acceptLanguage,
     'sec-ch-ua': profile.secChUa,
     'sec-ch-ua-mobile': profile.secChUaMobile,
-    'sec-ch-ua-platform': profile.secChUaPlatform,
-    'upgrade-insecure-requests': '1'
+    'sec-ch-ua-platform': profile.secChUaPlatform
   });
 
   await context.addInitScript(({ platform, hardwareConcurrency }) => {
@@ -75,6 +74,13 @@ export async function applySessionProfile(
       get: () => hardwareConcurrency,
       configurable: true
     });
+
+    if (typeof (window as Window & { Notification?: unknown }).Notification === 'undefined') {
+      (window as Window & { Notification: { permission: string; requestPermission: () => Promise<NotificationPermission> } }).Notification = {
+        permission: 'default',
+        requestPermission: async () => 'default'
+      };
+    }
   }, {
     platform: profile.platform,
     hardwareConcurrency: profile.hardwareConcurrency
