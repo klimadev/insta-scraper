@@ -20,10 +20,10 @@ import {
   NEXT_PAGE_ROLE,
   NEXT_PAGE_NAME
 } from './selectors';
+import { InstagramProfileScraper, findFirstInstagramProfileUrl, InstagramProfile } from '../instagram-profile';
 
 const SEARCH_INPUT_SELECTOR = 'textarea[name="q"], input[name="q"]';
 const RESULTS_READY_SELECTOR = '#search h3, #rso h3, h3';
-const MAX_CAPTCHA_WAIT_MS = 120000;
 const TRANSIENT_NAVIGATION_ERRORS = [
   'execution context was destroyed',
   'cannot find context with specified id',
@@ -52,6 +52,8 @@ export class GoogleSearchScraper {
         finalConfig.query,
         finalConfig.maxPages
       );
+      
+      await this.scrapeFirstInstagramProfile(results);
       
       return this.buildOutput(finalConfig.query, finalConfig.maxPages, results);
     } finally {
@@ -223,9 +225,8 @@ export class GoogleSearchScraper {
 
     try {
       let clearChecks = 0;
-      const deadline = Date.now() + MAX_CAPTCHA_WAIT_MS;
 
-      while (clearChecks < 3 && Date.now() < deadline) {
+      while (clearChecks < 3) {
         await this.page.waitForTimeout(1800);
 
         const currentSignal = await this.detectCaptchaSignal();
@@ -236,10 +237,6 @@ export class GoogleSearchScraper {
         }
 
         clearChecks += 1;
-      }
-
-      if (clearChecks < 3) {
-        logger.warn('Tempo limite de espera por CAPTCHA atingido. Continuando com a execucao.');
       }
     } finally {
       this.page.setDefaultTimeout(BROWSER_CONFIG.timeout);
@@ -557,5 +554,45 @@ export class GoogleSearchScraper {
       this.context = null;
       this.page = null;
     }
+  }
+
+  private async scrapeFirstInstagramProfile(results: SearchResult[]): Promise<void> {
+    if (!this.context || results.length === 0) return;
+
+    const urls = results.map(r => r.url);
+    const instagramInfo = findFirstInstagramProfileUrl(urls);
+
+    if (!instagramInfo || !instagramInfo.normalizedUrl) {
+      logger.warn('Nenhum perfil do Instagram encontrado nos resultados.');
+      return;
+    }
+
+    logger.update(`Acessando perfil Instagram: @${instagramInfo.username}`);
+
+    const scraper = new InstagramProfileScraper();
+    const profile = await scraper.scrapeProfileInNewTab(this.context, instagramInfo.normalizedUrl);
+
+    if (profile) {
+      this.printInstagramProfile(profile);
+    } else {
+      logger.warn('Nao foi possivel extrair dados do perfil.');
+    }
+  }
+
+  private printInstagramProfile(profile: InstagramProfile): void {
+    console.log('');
+    console.log('════════════════════════════════════════════════════════');
+    console.log('  PERFIL DO INSTAGRAM');
+    console.log('════════════════════════════════════════════════════════');
+    console.log(`  Username: @${profile.username}`);
+    console.log(`  Nome: ${profile.name}`);
+    console.log(`  Publicacoes: ${profile.publicacoes.toLocaleString('pt-BR')}`);
+    console.log(`  Seguidores: ${profile.seguidores.toLocaleString('pt-BR')}`);
+    console.log(`  Seguindo: ${profile.seguindo.toLocaleString('pt-BR')}`);
+    if (profile.bio) {
+      console.log(`  Bio: ${profile.bio}`);
+    }
+    console.log('════════════════════════════════════════════════════════');
+    console.log('');
   }
 }
