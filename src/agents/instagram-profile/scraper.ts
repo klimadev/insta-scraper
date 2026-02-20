@@ -1,10 +1,24 @@
 import { Page, BrowserContext } from 'playwright';
 import { InstagramProfile } from './types';
+import { logger } from '../../cli/logger';
 
 const INSTAGRAM_PROFILE_SELECTORS = {
   headerSection: 'header section',
   closeButton: 'button[aria-label="Fechar"], button[aria-label="Close"]'
 };
+
+const INSTAGRAM_LOGIN_SELECTORS = {
+  usernameInput: 'input[name="username"]',
+  passwordInput: 'input[name="password"]',
+  submitButton: 'button[type="submit"]'
+};
+
+const INSTAGRAM_LOGIN_URL_PATTERNS = [
+  '/accounts/login',
+  '/login'
+];
+
+const LOGIN_NOTIFICATION_INTERVAL_MS = 25000;
 
 function extractProfileData(): Partial<InstagramProfile> {
   const header = document.querySelector('header');
@@ -58,6 +72,8 @@ export class InstagramProfileScraper {
         timeout: 60000
       });
       
+      await this.waitForLoginResolution(page, profileUrl);
+      
       await page.waitForSelector(INSTAGRAM_PROFILE_SELECTORS.headerSection, {
         timeout: 15000
       });
@@ -95,6 +111,117 @@ export class InstagramProfileScraper {
     } catch {
       return;
     }
+  }
+
+  private async isLoginPage(page: Page): Promise<boolean> {
+    const url = page.url().toLowerCase();
+    
+    const hasLoginUrl = INSTAGRAM_LOGIN_URL_PATTERNS.some(pattern => url.includes(pattern));
+    
+    if (!hasLoginUrl) {
+      return false;
+    }
+    
+    try {
+      const usernameVisible = await page.locator(INSTAGRAM_LOGIN_SELECTORS.usernameInput).isVisible({ timeout: 1000 });
+      const passwordVisible = await page.locator(INSTAGRAM_LOGIN_SELECTORS.passwordInput).isVisible({ timeout: 1000 });
+      
+      return usernameVisible && passwordVisible;
+    } catch {
+      return false;
+    }
+  }
+
+  private async waitForLoginResolution(page: Page, profileUrl: string): Promise<boolean> {
+    if (!await this.isLoginPage(page)) {
+      return true;
+    }
+
+    this.printLoginRequired();
+
+    process.stdout.write('\x07');
+
+    let lastNotificationTime = Date.now();
+
+    while (true) {
+      await page.waitForTimeout(2000);
+
+      const currentUrl = page.url().toLowerCase();
+      const isStillLoginUrl = INSTAGRAM_LOGIN_URL_PATTERNS.some(pattern => currentUrl.includes(pattern));
+
+      if (!isStillLoginUrl) {
+        this.printLoginDetected();
+        await page.waitForTimeout(1500);
+        
+        try {
+          await page.goto(profileUrl, {
+            waitUntil: 'domcontentloaded',
+            timeout: 30000
+          });
+          return true;
+        } catch {
+          return false;
+        }
+      }
+
+      try {
+        const usernameVisible = await page.locator(INSTAGRAM_LOGIN_SELECTORS.usernameInput).isVisible({ timeout: 500 });
+        
+        if (!usernameVisible) {
+          this.printLoginDetected();
+          await page.waitForTimeout(1500);
+          
+          try {
+            await page.goto(profileUrl, {
+              waitUntil: 'domcontentloaded',
+              timeout: 30000
+            });
+            return true;
+          } catch {
+            return false;
+          }
+        }
+      } catch {
+        this.printLoginDetected();
+        await page.waitForTimeout(1500);
+        
+        try {
+          await page.goto(profileUrl, {
+            waitUntil: 'domcontentloaded',
+            timeout: 30000
+          });
+          return true;
+        } catch {
+          return false;
+        }
+      }
+
+      const now = Date.now();
+      if (now - lastNotificationTime >= LOGIN_NOTIFICATION_INTERVAL_MS) {
+        process.stdout.write('\x07');
+        console.log('  Aguardando login no Instagram...');
+        lastNotificationTime = now;
+      }
+    }
+  }
+
+  private printLoginRequired(): void {
+    console.log('');
+    console.log('════════════════════════════════════════════════════════');
+    console.log('  LOGIN DO INSTAGRAM NECESSARIO');
+    console.log('════════════════════════════════════════════════════════');
+    console.log('  Faca login manualmente no browser aberto.');
+    console.log('  O scraping continuara automaticamente apos o login.');
+    console.log('  Aguardando...');
+    console.log('════════════════════════════════════════════════════════');
+    console.log('');
+    logger.warn('INSTAGRAM LOGIN - AGUARDANDO AUTENTICACAO MANUAL');
+  }
+
+  private printLoginDetected(): void {
+    console.log('');
+    console.log('  Login detectado! Continuando extracao...');
+    console.log('');
   }
   
   async scrapeProfileInNewTab(
