@@ -1,13 +1,19 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { launchStealthBrowser } from '../agents/google-search/stealth-bootstrap';
-import { applySessionProfile, pickSessionProfile } from '../agents/google-search/stealth-profile';
+import { generateSessionFingerprint, injectFingerprint, resolveTimezone, GeneratedFingerprint } from '../agents/google-search/stealth-profile';
 import { FALLBACK_CHANNELS } from '../engine/browser-config';
+import { loadSessionState, saveSessionState, StorageStateData } from '../engine/session-manager';
 import { Browser } from 'playwright';
 
 async function run(): Promise<void> {
-  const profile = pickSessionProfile();
+  const fingerprint: GeneratedFingerprint = generateSessionFingerprint();
   let browser: Browser | null = null;
+
+  console.log('Fingerprint gerado:');
+  console.log(`  UA: ${fingerprint.fingerprint.navigator.userAgent}`);
+  console.log(`  Locale: ${fingerprint.fingerprint.navigator.language}`);
+  console.log(`  Screen: ${fingerprint.fingerprint.screen.width}x${fingerprint.fingerprint.screen.height}`);
 
   for (const channel of FALLBACK_CHANNELS) {
     try {
@@ -19,22 +25,21 @@ async function run(): Promise<void> {
   }
 
   if (!browser) {
-    throw new Error('Nenhum navegador compatível encontrado para o teste stealth.');
+    throw new Error('Nenhum navegador compativel encontrado para o teste stealth.');
   }
+
+  const savedState = await loadSessionState('google');
 
   const context = await browser.newContext({
     viewport: null,
     colorScheme: 'light',
-    locale: profile.locale,
-    timezoneId: profile.timezoneId,
-    userAgent: profile.userAgent,
-    storageState: {
-      cookies: [],
-      origins: []
-    }
+    locale: fingerprint.fingerprint.navigator.language,
+    timezoneId: resolveTimezone(fingerprint),
+    userAgent: fingerprint.fingerprint.navigator.userAgent,
+    storageState: savedState ? JSON.parse(JSON.stringify(savedState)) : undefined
   });
 
-  await applySessionProfile(context, profile);
+  await injectFingerprint(context, fingerprint);
 
   const page = await context.newPage();
   await page.goto('https://bot.sannysoft.com', { waitUntil: 'networkidle', timeout: 90000 });
@@ -49,6 +54,9 @@ async function run(): Promise<void> {
   await page.screenshot({ path: screenshotPath, fullPage: true });
 
   console.log(`Screenshot salvo em: ${screenshotPath}`);
+
+  const state = await context.storageState() as StorageStateData;
+  await saveSessionState('google', state);
 
   await context.close();
   await browser.close();

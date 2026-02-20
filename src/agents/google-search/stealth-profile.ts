@@ -1,90 +1,46 @@
 import { BrowserContext } from 'playwright';
+import { FingerprintGenerator, Fingerprint } from 'fingerprint-generator';
+import { FingerprintInjector } from 'fingerprint-injector';
 
-interface UserAgentProfile {
-  userAgent: string;
-  secChUa: string;
-  secChUaMobile: string;
-  secChUaPlatform: string;
-  platform: string;
-  locale: string;
-  acceptLanguage: string;
-  timezoneId: string;
-  hardwareConcurrency: number;
+const generator = new FingerprintGenerator({
+  browsers: [{ name: 'chrome', minVersion: 120 }],
+  operatingSystems: ['windows'],
+  devices: ['desktop'],
+  locales: ['pt-BR']
+});
+
+export interface GeneratedFingerprint {
+  fingerprint: Fingerprint;
+  headers: Record<string, string>;
 }
 
-const USER_AGENT_PROFILES: UserAgentProfile[] = [
-  {
-    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36',
-    secChUa: '"Not(A:Brand";v="99", "Google Chrome";v="133", "Chromium";v="133"',
-    secChUaMobile: '?0',
-    secChUaPlatform: '"Windows"',
-    platform: 'Win32',
-    locale: 'pt-BR',
-    acceptLanguage: 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
-    timezoneId: 'America/Sao_Paulo',
-    hardwareConcurrency: 8
-  },
-  {
-    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36',
-    secChUa: '"Not(A:Brand";v="24", "Google Chrome";v="132", "Chromium";v="132"',
-    secChUaMobile: '?0',
-    secChUaPlatform: '"Windows"',
-    platform: 'Win32',
-    locale: 'pt-BR',
-    acceptLanguage: 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
-    timezoneId: 'America/Sao_Paulo',
-    hardwareConcurrency: 12
-  },
-  {
-    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-    secChUa: '"Not(A:Brand";v="8", "Google Chrome";v="131", "Chromium";v="131"',
-    secChUaMobile: '?0',
-    secChUaPlatform: '"Windows"',
-    platform: 'Win32',
-    locale: 'pt-BR',
-    acceptLanguage: 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
-    timezoneId: 'America/Sao_Paulo',
-    hardwareConcurrency: 4
-  }
-];
+export function generateSessionFingerprint(): GeneratedFingerprint {
+  const result = generator.getFingerprint();
 
-export function pickSessionProfile(): UserAgentProfile {
-  const index = Math.floor(Math.random() * USER_AGENT_PROFILES.length);
-  return USER_AGENT_PROFILES[index];
+  return {
+    fingerprint: result.fingerprint,
+    headers: result.headers
+  };
 }
 
-export async function applySessionProfile(
+export async function injectFingerprint(
   context: BrowserContext,
-  profile: UserAgentProfile
+  fingerprint: GeneratedFingerprint
 ): Promise<void> {
-  await context.setExtraHTTPHeaders({
-    'accept-language': profile.acceptLanguage,
-    'sec-ch-ua': profile.secChUa,
-    'sec-ch-ua-mobile': profile.secChUaMobile,
-    'sec-ch-ua-platform': profile.secChUaPlatform
-  });
-
-  await context.addInitScript(({ platform, hardwareConcurrency }) => {
-    Object.defineProperty(navigator, 'platform', {
-      get: () => platform,
-      configurable: true
-    });
-
-    Object.defineProperty(navigator, 'hardwareConcurrency', {
-      get: () => hardwareConcurrency,
-      configurable: true
-    });
-
-    if (typeof (window as Window & { Notification?: unknown }).Notification === 'undefined') {
-      (window as Window & { Notification: { permission: string; requestPermission: () => Promise<NotificationPermission> } }).Notification = {
-        permission: 'default',
-        requestPermission: async () => 'default'
-      };
-    }
-  }, {
-    platform: profile.platform,
-    hardwareConcurrency: profile.hardwareConcurrency
-  });
+  const injector = new FingerprintInjector();
+  await injector.attachFingerprintToPlaywright(context, fingerprint);
 }
 
-export type { UserAgentProfile };
+export function resolveTimezone(fingerprint: GeneratedFingerprint): string {
+  const language = fingerprint.fingerprint.navigator.language;
+  if (language.startsWith('pt-BR') || language.startsWith('pt')) {
+    return 'America/Sao_Paulo';
+  }
+  if (language.startsWith('en-US')) {
+    return 'America/New_York';
+  }
+  if (language.startsWith('en-GB')) {
+    return 'Europe/London';
+  }
+  return 'America/Sao_Paulo';
+}

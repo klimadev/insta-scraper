@@ -1,10 +1,13 @@
 import { Browser, BrowserContext, Page } from 'playwright';
+import { Cursor } from 'ghost-cursor-playwright';
 import { BROWSER_CONFIG, FALLBACK_CHANNELS } from '../../engine/browser-config';
 import { logger } from '../../cli/logger';
 import { ERROR_CODES } from '../../types';
 import { launchStealthBrowser } from './stealth-bootstrap';
-import { applySessionProfile, pickSessionProfile, UserAgentProfile } from './stealth-profile';
-import { humanMove, humanType } from './humanization';
+import { generateSessionFingerprint, injectFingerprint, resolveTimezone, GeneratedFingerprint } from './stealth-profile';
+import { createHumanCursor, humanMove, humanType } from './humanization';
+import { loadSessionState, saveSessionState, StorageStateData } from '../../engine/session-manager';
+import { loadProxyConfig, ProxyConfigInput } from '../../engine/proxy-config';
 import {
   SearchResult,
   SearchOutput,
@@ -35,8 +38,14 @@ export class GoogleSearchScraper {
   private browser: Browser | null = null;
   private context: BrowserContext | null = null;
   private page: Page | null = null;
-  private sessionProfile: UserAgentProfile | null = null;
+  private cursor: Cursor | null = null;
+  private fingerprint: GeneratedFingerprint | null = null;
   private captchaWaitLoopActive = false;
+  private proxyConfig?: ProxyConfigInput;
+
+  setProxy(config: ProxyConfigInput): void {
+    this.proxyConfig = config;
+  }
 
   async search(config: GoogleSearchConfig): Promise<SearchOutput> {
     const finalConfig = { ...DEFAULT_CONFIG, ...config };
@@ -74,7 +83,9 @@ export class GoogleSearchScraper {
 
   private async launchBrowser(): Promise<void> {
     let lastError: Error | null = null;
-    this.sessionProfile = pickSessionProfile();
+    this.fingerprint = generateSessionFingerprint();
+
+    logger.info(`Fingerprint: ${this.fingerprint.fingerprint.navigator.userAgent.substring(0, 60)}...`);
 
     for (const channel of FALLBACK_CHANNELS) {
       try {
@@ -84,29 +95,30 @@ export class GoogleSearchScraper {
 
         this.browser = await launchStealthBrowser(channel);
 
-        const profile = this.sessionProfile;
-        if (!profile) {
-          throw new Error('STEALTH_PROFILE_NOT_SET');
+        if (!this.fingerprint) {
+          throw new Error('FINGERPRINT_NOT_GENERATED');
         }
+
+        const savedState = await loadSessionState('google');
+        const proxy = loadProxyConfig(this.proxyConfig);
 
         this.context = await this.browser.newContext({
           viewport: null,
           colorScheme: 'light',
-          locale: profile.locale,
-          timezoneId: profile.timezoneId,
-          userAgent: profile.userAgent,
-          storageState: {
-            cookies: [],
-            origins: []
-          },
+          locale: this.fingerprint.fingerprint.navigator.language,
+          timezoneId: resolveTimezone(this.fingerprint),
+          userAgent: this.fingerprint.fingerprint.navigator.userAgent,
+          storageState: savedState ? JSON.parse(JSON.stringify(savedState)) : undefined,
           ignoreHTTPSErrors: true,
           javaScriptEnabled: true,
-          offline: false
+          offline: false,
+          ...(proxy ? { proxy } : {})
         });
 
-        await applySessionProfile(this.context, profile);
+        await injectFingerprint(this.context, this.fingerprint);
 
         this.page = await this.context.newPage();
+        this.cursor = await createHumanCursor(this.page);
         
         return;
       } catch (error) {
@@ -124,14 +136,14 @@ export class GoogleSearchScraper {
   }
 
   private async performSearch(query: string): Promise<void> {
-    if (!this.page) throw new Error('Page not initialized');
+    if (!this.page || !this.cursor) throw new Error('Page not initialized');
 
     try {
       await this.navigateWithStealth(GOOGLE_URL);
 
       await this.handleCookieConsent();
 
-      await humanMove(this.page, SEARCH_INPUT_SELECTOR);
+      await humanMove(this.cursor, SEARCH_INPUT_SELECTOR);
       await humanType(this.page, SEARCH_INPUT_SELECTOR, query);
       await this.page.keyboard.press('Enter');
 
@@ -150,16 +162,9 @@ export class GoogleSearchScraper {
   }
 
   private async navigateWithStealth(url: string): Promise<void> {
-    if (!this.page || !this.context || !this.sessionProfile) {
-      throw new Error('STEALTH_NOT_INITIALIZED');
+    if (!this.page) {
+      throw new Error('PAGE_NOT_INITIALIZED');
     }
-
-    await this.context.setExtraHTTPHeaders({
-      'accept-language': this.sessionProfile.acceptLanguage,
-      'sec-ch-ua': this.sessionProfile.secChUa,
-      'sec-ch-ua-mobile': this.sessionProfile.secChUaMobile,
-      'sec-ch-ua-platform': this.sessionProfile.secChUaPlatform
-    });
 
     await this.page.goto(url, {
       waitUntil: 'domcontentloaded',
@@ -168,12 +173,15 @@ export class GoogleSearchScraper {
   }
 
   private async handleCookieConsent(): Promise<void> {
-    if (!this.page) return;
+    if (!this.page || !this.cursor) return;
 
     const acceptButton = this.page.locator('#L2AGLb, button:has-text("Aceitar"), button:has-text("Accept")').first();
     
     try {
-      await acceptButton.click({ timeout: 2000 });
+      const isVisible = await acceptButton.isVisible({ timeout: 2000 });
+      if (isVisible) {
+        await humanMove(this.cursor, '#L2AGLb, button:has-text("Aceitar"), button:has-text("Accept")');
+      }
     } catch {
       return;
     }
@@ -217,7 +225,7 @@ export class GoogleSearchScraper {
     console.log('  Aguardando...');
     console.log('════════════════════════════════════════════════════════');
     console.log('');
-    logger.warn('CAPTCHA DETECTADO - AGUARDANDO RESOLUÇÃO MANUAL');
+    logger.warn('CAPTCHA DETECTADO - AGUARDANDO RESOLUCAO MANUAL');
     process.stdout.write('\x07');
 
     this.page.setDefaultTimeout(0);
@@ -515,7 +523,7 @@ export class GoogleSearchScraper {
   }
 
   private async goToNextPage(): Promise<boolean> {
-    if (!this.page) return false;
+    if (!this.page || !this.cursor) return false;
 
     const nextButton = this.page.getByRole(NEXT_PAGE_ROLE, { 
       name: NEXT_PAGE_NAME, 
@@ -548,11 +556,21 @@ export class GoogleSearchScraper {
   }
 
   private async closeBrowser(): Promise<void> {
+    if (this.context) {
+      try {
+        const state = await this.context.storageState() as StorageStateData;
+        await saveSessionState('google', state);
+      } catch {
+        // Context may already be closed
+      }
+    }
+
     if (this.browser) {
       await this.browser.close();
       this.browser = null;
       this.context = null;
       this.page = null;
+      this.cursor = null;
     }
   }
 

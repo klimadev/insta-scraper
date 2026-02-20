@@ -1,4 +1,5 @@
 import { Page } from 'playwright';
+import { createCursor, Cursor } from 'ghost-cursor-playwright';
 
 function randomBetween(min: number, max: number): number {
   return Math.floor(Math.random() * (max - min + 1)) + min;
@@ -16,7 +17,6 @@ function shouldApplyTypo(char: string): boolean {
   if (!/[a-z0-9]/i.test(char)) {
     return false;
   }
-
   return Math.random() < 0.03;
 }
 
@@ -24,93 +24,70 @@ function typoVariant(char: string): string {
   if (!/[a-z]/i.test(char)) {
     return char;
   }
-
   const offset = Math.random() > 0.5 ? 1 : -1;
   const code = char.toLowerCase().charCodeAt(0) + offset;
-
   if (code < 97 || code > 122) {
     return char;
   }
-
   return String.fromCharCode(code);
 }
 
-function easeInOutSine(value: number): number {
-  return -(Math.cos(Math.PI * value) - 1) / 2;
+function gaussianRandom(min: number, max: number): number {
+  const u1 = Math.random();
+  const u2 = Math.random();
+  const z0 = Math.sqrt(-2.0 * Math.log(u1)) * Math.cos(2.0 * Math.PI * u2);
+  const mean = (min + max) / 2;
+  const stdDev = (max - min) / 4;
+  let value = mean + z0 * stdDev;
+  value = Math.max(min, Math.min(max, value));
+  return Math.floor(value);
 }
 
-function cubicBezierPoint(
-  t: number,
-  p0: { x: number; y: number },
-  p1: { x: number; y: number },
-  p2: { x: number; y: number },
-  p3: { x: number; y: number }
-): { x: number; y: number } {
-  const k = 1 - t;
-  const x = (k ** 3 * p0.x) + (3 * k ** 2 * t * p1.x) + (3 * k * t ** 2 * p2.x) + (t ** 3 * p3.x);
-  const y = (k ** 3 * p0.y) + (3 * k ** 2 * t * p1.y) + (3 * k * t ** 2 * p2.y) + (t ** 3 * p3.y);
-  return { x, y };
+export async function createHumanCursor(page: Page): Promise<Cursor> {
+  return createCursor(page, {
+    overshootSpread: 10,
+    overshootRadius: 120,
+    debug: false
+  });
 }
 
 export async function humanType(page: Page, selector: string, text: string): Promise<void> {
   const target = page.locator(selector).first();
   await target.click({ timeout: 5000 });
 
+  await sleep(gaussianRandom(150, 400));
+
   for (const char of text) {
     if (shouldApplyTypo(char)) {
-      await page.keyboard.type(typoVariant(char), { delay: randomBetween(35, 90) });
-      await sleep(randomBetween(40, 110));
+      await page.keyboard.type(typoVariant(char), { delay: gaussianRandom(35, 90) });
+      await sleep(gaussianRandom(40, 110));
       await page.keyboard.press('Backspace');
-      await sleep(randomBetween(30, 90));
+      await sleep(gaussianRandom(30, 90));
     }
 
-    await page.keyboard.type(char, { delay: randomBetween(30, 110) });
+    await page.keyboard.type(char, { delay: gaussianRandom(30, 110) });
 
     if (isPauseCharacter(char)) {
-      await sleep(randomBetween(90, 260));
+      await sleep(gaussianRandom(90, 260));
     }
   }
 }
 
-export async function humanMove(page: Page, selector: string): Promise<void> {
-  const target = page.locator(selector).first();
-  const box = await target.boundingBox();
+export async function humanMove(cursor: Cursor, selector: string): Promise<void> {
+  await cursor.actions.click({ target: selector });
+}
 
-  if (!box) {
-    return;
-  }
+export async function humanMoveTo(cursor: Cursor, x: number, y: number): Promise<void> {
+  await cursor.actions.move({ x, y });
+}
 
-  const viewportSize = page.viewportSize() || { width: 1366, height: 768 };
-  const start = {
-    x: randomBetween(Math.floor(viewportSize.width * 0.1), Math.floor(viewportSize.width * 0.9)),
-    y: randomBetween(Math.floor(viewportSize.height * 0.1), Math.floor(viewportSize.height * 0.9))
-  };
-  const end = {
-    x: box.x + box.width / 2,
-    y: box.y + box.height / 2
-  };
-  const spreadX = Math.abs(end.x - start.x) * 0.35;
-  const spreadY = Math.abs(end.y - start.y) * 0.35;
-  const controlA = {
-    x: start.x + randomBetween(-Math.floor(spreadX), Math.floor(spreadX)),
-    y: start.y + randomBetween(-Math.floor(spreadY), Math.floor(spreadY))
-  };
-  const controlB = {
-    x: end.x + randomBetween(-Math.floor(spreadX), Math.floor(spreadX)),
-    y: end.y + randomBetween(-Math.floor(spreadY), Math.floor(spreadY))
-  };
-  const steps = randomBetween(14, 32);
+export async function humanScroll(page: Page, direction: 'down' | 'up' = 'down', distance: number = 300): Promise<void> {
+  const delta = direction === 'down' ? distance : -distance;
+  const steps = randomBetween(3, 6);
+  const stepSize = Math.floor(delta / steps);
 
-  await page.mouse.move(start.x, start.y);
-
-  for (let step = 1; step <= steps; step++) {
-    const linear = step / steps;
-    const eased = easeInOutSine(linear);
-    const point = cubicBezierPoint(eased, start, controlA, controlB, end);
-    const jitterX = (Math.random() - 0.5) * 1.6;
-    const jitterY = (Math.random() - 0.5) * 1.6;
-
-    await page.mouse.move(point.x + jitterX, point.y + jitterY);
-    await sleep(randomBetween(2, 10));
+  for (let i = 0; i < steps; i++) {
+    await page.mouse.wheel(0, stepSize);
+    await sleep(randomBetween(50, 150));
   }
 }

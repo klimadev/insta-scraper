@@ -1,6 +1,6 @@
 {
   "name": "insta-launcher",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "type": "commonjs",
   "main": "dist/index.js",
   "bin": "dist/index.js",
@@ -13,12 +13,12 @@
   },
   "dependencies": {
     "chalk": "^4.1.2",
-    "chromium-bidi": "^7.3.2",
+    "fingerprint-generator": "^2.1.80",
+    "fingerprint-injector": "^2.1.80",
+    "ghost-cursor-playwright": "^2.1.0",
     "inquirer": "^8.2.7",
     "ora": "^5.4.1",
-    "playwright": "^1.30.0",
-    "playwright-extra": "^4.3.6",
-    "puppeteer-extra-plugin-stealth": "^2.11.2"
+    "playwright": "^1.30.0"
   },
   "devDependencies": {
     "@types/inquirer": "^9.0.9",

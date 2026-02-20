@@ -1,0 +1,84 @@
+{
+  "storageState": {
+    "cookies": [
+      {
+        "name": "__Secure-STRP",
+        "value": "AD6DogsVevPlmdYQF7sAqKo5tKkh0cSlug6iSGXGHyHl2vQ1QxarqF6zUd5zWwWzcqH51bnp8aFkLnivMxdROIPLdj2s36MWsSar",
+        "domain": ".google.com",
+        "path": "/",
+        "expires": 1771551153.834163,
+        "httpOnly": false,
+        "secure": true,
+        "sameSite": "Strict"
+      },
+      {
+        "name": "AEC",
+        "value": "AaJma5uZG4W44jrNLy5hMBzk4vyXTu000uDaaeGeKvtyJ5wfIxWQY5qcNSc",
+        "domain": ".google.com",
+        "path": "/",
+        "expires": 1787102853.835274,
+        "httpOnly": true,
+        "secure": true,
+        "sameSite": "Lax"
+      },
+      {
+        "name": "__Secure-BUCKET",
+        "value": "COsE",
+        "domain": ".google.com",
+        "path": "/",
+        "expires": 1787102853.835565,
+        "httpOnly": true,
+        "secure": true,
+        "sameSite": "Lax"
+      },
+      {
+        "name": "NID",
+        "value": "529=swUs7HM3j2vcBVuuGqC4v6sQ-SOi7N74FIIZVo3nSvPCOPUpCM3FJH56VdnnmCw91mvziZIePhUh4y6miEkhSCIwOPv-0eKEz7l03rvIzYGbQSDZU2IxpUFuhuCnPzsfC4d8jjf68KTas6YyBFBxFcwfzSI9P-eXmBy49TBX6ISRyw6BO3v3jxk0cIafxXwjq5a_y_UVjeROyqtFrqfrTF2RiClYJXDSccMedVi_wL3Qhtzf9LyX1M7u8_n6NKYDOfS2v0PJaw",
+        "domain": ".google.com",
+        "path": "/",
+        "expires": 1787362053.639628,
+        "httpOnly": true,
+        "secure": true,
+        "sameSite": "None"
+      },
+      {
+        "name": "DV",
+        "value": "w4pw-MEW1QEsgAod0B_HpMKUS4-Kx1kOd0vyzxJYZw4AAAA",
+        "domain": "www.google.com",
+        "path": "/",
+        "expires": 1771551463,
+        "httpOnly": false,
+        "secure": false,
+        "sameSite": "Lax"
+      }
+    ],
+    "origins": [
+      {
+        "origin": "https://www.google.com",
+        "localStorage": [
+          {
+            "name": "sb_wiz.sr_di",
+            "value": "GKKH7IfpuNfI6QEYwcCWsMGF3o_yARiAl9ur27awjUAY8dWsi9T-lOqxARjLgrbahof44CU"
+          },
+          {
+            "name": "sb_wiz.pq_tm_hp",
+            "value": "1771550864808"
+          },
+          {
+            "name": "sb_wiz.qc",
+            "value": "1"
+          },
+          {
+            "name": "sb_wiz.sc_pq",
+            "value": ""
+          },
+          {
+            "name": "sb_wiz.pq",
+            "value": "teste"
+          }
+        ]
+      }
+    ]
+  },
+  "createdAt": "2026-02-20T01:27:44.849Z"
+}
