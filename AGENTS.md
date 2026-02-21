@@ -22,12 +22,14 @@ Follow these conventions to keep behavior consistent with maintainers.
 - `src/agents/instagram-profile/` - Instagram profile extraction helpers
 - `src/engine/` - browser/proxy/session infrastructure
 - `src/cli/` - logger, messages, wizard, metrics
+- `src/utils/` - shared utilities (CSV, etc.)
 - `src/types/` - shared interfaces and error catalog
+- `src/scripts/` - standalone debug/test scripts
 - `.github/workflows/release.yml` - official distribution pipeline
 
 ## Required Commands
 
-Use these commands in this order after edits.
+Run these commands in order after any edits:
 
 ```bash
 npm install
@@ -35,47 +37,50 @@ npm run build
 ```
 
 Notes:
-- There is currently no dedicated lint script in `package.json`.
-- There is no unit-test framework configured (Jest/Vitest/etc).
-- `npm run build` is the required validation gate.
+- No dedicated lint script exists in `package.json`
+- No unit-test framework configured (Jest/Vitest/etc)
+- `npm run build` is the required validation gate
 
 ## Development Commands
 
 ```bash
-npm run dev
-npm run dev:google
-npm run test:stealth
+npm run dev                    # Interactive wizard flow
+npm run dev:google            # Quick local run for Google path
+npm run test:stealth          # Stealth smoke check against SannySoft
+npm run test:instagram:url    # Test Instagram profile extraction
 ```
-
-When to use:
-- `npm run dev`: interactive wizard flow
-- `npm run dev:google`: quick local run for Google path
-- `npm run test:stealth`: stealth smoke check against SannySoft
 
 ## Single-Test Guidance
 
-Because there is no formal test runner yet, a "single test" means running the one dedicated script:
+No formal test runner exists. "Single test" means running the relevant script:
 
 ```bash
+# Run specific test script based on changed area
+npm run test:instagram:url -- "https://www.instagram.com/nasa/"
 npm run test:stealth
 ```
 
-If future scripts are added (for example `test:*`), run only the relevant script for the changed area.
+## Debug Mode for Instagram
 
-## Release Workflow Commands
+```bash
+npm run test:instagram:url -- "https://www.instagram.com/user/" --raw
+npm run test:instagram:url -- "https://www.instagram.com/user/" --debug
+npm run test:instagram:url -- "https://www.instagram.com/user/" --sessionid=YOUR_SESSION_ID
+```
 
-Do not recreate old `pkg` flows.
-Distribution is handled by the GitHub Actions workflow.
+Options:
+- `--raw`: Save raw API response to `output/debug/`
+- `--debug`: Enable Playwright debug logs (DEBUG=pw:api)
+- `--sessionid=SESSION_ID`: Pass Instagram session ID directly
+
+## Release Workflow
+
+Do not recreate old `pkg` flows. Distribution via GitHub Actions:
 
 ```bash
 git tag vX.Y.Z
 git push origin vX.Y.Z
 ```
-
-Expected workflow behavior:
-- builds TypeScript
-- creates SEA portable package
-- publishes a single release asset zip
 
 ## Code Style Rules
 
@@ -89,12 +94,10 @@ Expected workflow behavior:
 
 ### Imports
 
-- Order groups: external packages -> internal modules
-- Prefer named imports where applicable
-- Keep relative path depth minimal and consistent
-- Avoid unused imports
-
-Example:
+Order groups: external packages -> internal modules.
+Prefer named imports where applicable.
+Keep relative path depth minimal and consistent.
+Avoid unused imports.
 
 ```ts
 import { Browser, Page } from 'playwright';
@@ -107,7 +110,7 @@ import { ERROR_CODES } from '../../types';
 - Keep `strict`-safe code (no implicit `any`)
 - Always type public method params and returns
 - Prefer interfaces/types in `src/types` or local `types.ts`
-- Use union/narrowing instead of broad casts when possible
+- Use union/narrowing instead of broad casts
 - Use `Error | null` state when deferring throws across retries
 
 ### Naming
@@ -130,17 +133,31 @@ import { ERROR_CODES } from '../../types';
 ### Logging and UX
 
 - Use `logger.start/update/succeed/fail` for long operations
-- Keep user-facing strings in Portuguese (current product convention)
+- Keep user-facing strings in Portuguese
 - Keep error actions actionable (what user should do next)
 - Avoid noisy debug logs in final code
 
-### Playwright and Automation Patterns
+### Playwright Patterns
 
 - Keep browser launch fallback channels intact (Chrome -> Edge)
 - Preserve stealth initialization order (fingerprint, context, page)
 - Keep CAPTCHA handling resilient and resumable
 - Avoid hard-coded waits when state-based waits are possible
-- Prefer selector constants from `selectors.ts`
+- Prefer selector constants
+
+### CSV Output Conventions
+
+When adding CSV output:
+- Use `toCsvRow()` from `src/utils/csv.ts`
+- Include `extractedAt` timestamp column
+- Escape quotes properly using `toCsvCell()`
+- Consider flexible schema for unknown fields (use JSON column for extensibility)
+
+Example for Instagram profile with bio links:
+```ts
+const bioLinksJson = profile.bioLinks ? JSON.stringify(profile.bioLinks) : '';
+// Columns: username, bioLinksCount, bioLinksUrls, bioLinksJson, ...
+```
 
 ## Change Management Rules
 
@@ -149,13 +166,14 @@ import { ERROR_CODES } from '../../types';
 - Prefer improving existing modules over adding duplicate helpers
 - Keep CommonJS compatibility (project is not ESM)
 
-## Validation Checklist (Manual)
+## Validation Checklist
 
-After `npm run build`, review:
-- command routing in `src/index.ts`
-- google-search main flow and pagination
-- session/proxy integration points
-- obvious null-state paths for `page/context/browser`
+After `npm run build`, manually review:
+- Command routing in `src/index.ts`
+- Google-search main flow and pagination
+- Instagram API-first extraction and fallback flow
+- Session/proxy integration points
+- Null-state paths for `page/context/browser`
 
 ## Rules Discovery
 
@@ -172,4 +190,5 @@ If those files are added later, merge their guidance into this document.
 - Do not assume a lint command exists when it does not
 - Do not run persistent dev servers in CI validation loops
 - Do not bypass type safety with broad `any` casts
-- Do not change release semantics away from the current workflow without explicit request
+- Do not change release semantics away from current workflow without explicit request
+- Do not add unit tests without configuring a test framework first

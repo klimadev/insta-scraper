@@ -1,3 +1,9 @@
+export interface BioLink {
+  title?: string;
+  url?: string;
+  link_type?: string;
+}
+
 export interface InstagramProfile {
   username: string;
   name: string;
@@ -6,6 +12,9 @@ export interface InstagramProfile {
   seguindo: number;
   bio: string;
   url: string;
+  link?: string;
+  linkTitulo?: string;
+  bioLinks?: BioLink[];
   extractedAt: string;
 }
 

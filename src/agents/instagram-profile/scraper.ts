@@ -33,6 +33,12 @@ interface InstagramWebProfileInfoResponse {
       username?: string;
       full_name?: string;
       biography?: string;
+      bio_links?: Array<{
+        title?: string;
+        url?: string;
+        link_type?: string;
+      }>;
+      external_url?: string;
       edge_followed_by?: {
         count?: number;
       };
@@ -289,6 +295,9 @@ export class InstagramProfileScraper {
       user.following_count
     );
 
+    const bioLinks = this.normalizeBioLinks(user.bio_links, user.external_url);
+    const primaryLink = bioLinks[0];
+
     return {
       username: user.username,
       name: user.full_name || '',
@@ -297,8 +306,42 @@ export class InstagramProfileScraper {
       seguindo,
       bio: user.biography || '',
       url: profileUrl,
+      link: primaryLink?.url,
+      linkTitulo: primaryLink?.title,
+      bioLinks,
       extractedAt: new Date().toISOString()
     };
+  }
+
+  private normalizeBioLinks(
+    bioLinks?: Array<{ title?: string; url?: string; link_type?: string }>,
+    externalUrl?: string
+  ): Array<{ title?: string; url?: string; link_type?: string }> {
+    const links: Array<{ title?: string; url?: string; link_type?: string }> = [];
+
+    if (bioLinks && bioLinks.length > 0) {
+      const seenUrls = new Set<string>();
+      for (const link of bioLinks) {
+        if (link.url && !seenUrls.has(link.url)) {
+          seenUrls.add(link.url);
+          links.push({
+            title: link.title,
+            url: link.url,
+            link_type: link.link_type
+          });
+        }
+      }
+    }
+
+    if (links.length === 0 && externalUrl) {
+      links.push({
+        title: undefined,
+        url: externalUrl,
+        link_type: 'external'
+      });
+    }
+
+    return links;
   }
 
   private resolveCount(...values: Array<number | undefined>): number {

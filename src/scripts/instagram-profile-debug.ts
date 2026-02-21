@@ -22,6 +22,7 @@ interface CliOptions {
   profileUrl: string;
   debug: boolean;
   sessionId: string | null;
+  raw: boolean;
 }
 
 interface FailureDebugInfo {
@@ -47,10 +48,16 @@ function parseArgs(args: string[]): CliOptions {
   let profileUrl = '';
   let debug = false;
   let sessionId: string | null = null;
+  let raw = false;
 
   for (const arg of args) {
     if (arg === '--debug') {
       debug = true;
+      continue;
+    }
+
+    if (arg === '--raw') {
+      raw = true;
       continue;
     }
 
@@ -65,10 +72,10 @@ function parseArgs(args: string[]): CliOptions {
   }
 
   if (!profileUrl) {
-    throw new Error('USAGE: npm run test:instagram:url -- "https://www.instagram.com/usuario/" [--debug] [--sessionid=SEU_ID]');
+    throw new Error('USAGE: npm run test:instagram:url -- "https://www.instagram.com/usuario/" [--debug] [--raw] [--sessionid=SEU_ID]');
   }
 
-  return { profileUrl, debug, sessionId };
+  return { profileUrl, debug, sessionId, raw };
 }
 
 function ensureDir(dirPath: string): void {
@@ -89,8 +96,16 @@ function writeInstagramProfileCsv(filePath: string, profile: {
   seguindo: number;
   bio: string;
   url: string;
+  link?: string;
+  linkTitulo?: string;
+  bioLinks?: Array<{ title?: string; url?: string; link_type?: string }>;
   extractedAt: string;
 }): void {
+  const bioLinksCount = profile.bioLinks?.length || 0;
+  const bioLinksUrls = profile.bioLinks?.map(l => l.url || '').join(' | ') || '';
+  const bioLinksTitulos = profile.bioLinks?.map(l => l.title || '').join(' | ') || '';
+  const bioLinksJson = profile.bioLinks ? JSON.stringify(profile.bioLinks) : '';
+
   const header = toCsvRow([
     'username',
     'name',
@@ -98,6 +113,12 @@ function writeInstagramProfileCsv(filePath: string, profile: {
     'seguidores',
     'seguindo',
     'bio',
+    'link',
+    'linkTitulo',
+    'bioLinksCount',
+    'bioLinksUrls',
+    'bioLinksTitulos',
+    'bioLinksJson',
     'url',
     'extractedAt'
   ]);
@@ -109,6 +130,12 @@ function writeInstagramProfileCsv(filePath: string, profile: {
     profile.seguidores,
     profile.seguindo,
     profile.bio,
+    profile.link || '',
+    profile.linkTitulo || '',
+    bioLinksCount,
+    bioLinksUrls,
+    bioLinksTitulos,
+    bioLinksJson,
     profile.url,
     profile.extractedAt
   ]);
@@ -227,6 +254,7 @@ async function run(): Promise<void> {
   console.log('Teste individual de extracao Instagram');
   console.log(`URL normalizada: ${urlInfo.normalizedUrl}`);
   console.log(`Debug ativo: ${options.debug ? 'sim' : 'nao'}`);
+  console.log(`Raw API: ${options.raw ? 'sim' : 'nao'}`);
 
   const resolvedSessionId = resolveInstagramSessionIdFromEnv();
   if (resolvedSessionId) {
@@ -250,6 +278,75 @@ async function run(): Promise<void> {
       console.log('Nenhum sessionid detectado automaticamente na sessao atual.');
     }
 
+    if (options.raw) {
+      console.log('\n=== MODO RAW: Fazendo requisicao direta para API ===');
+      const username = urlInfo.username || '';
+      const apiUrl = `https://www.instagram.com/api/v1/users/web_profile_info/?username=${encodeURIComponent(username)}`;
+
+      const rawHeaders: Record<string, string> = {
+        'User-Agent': fingerprint.fingerprint.navigator.userAgent,
+        'Accept': 'application/json',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Referer': `https://www.instagram.com/${username}/`,
+        'x-ig-app-id': '936619743392459',
+        'x-ig-www-claim': '0'
+      };
+
+      if (resolvedSessionId || contextSessionId) {
+        rawHeaders['Cookie'] = `sessionid=${resolvedSessionId || contextSessionId}`;
+      }
+
+      try {
+        const apiResponse = await page.request.get(apiUrl, {
+          timeout: 15000,
+          failOnStatusCode: false,
+          headers: rawHeaders
+        });
+
+        const rawStatus = apiResponse.status();
+        const rawHeadersResp = apiResponse.headers();
+        let rawBody = '';
+
+        try {
+          const contentType = rawHeadersResp['content-type'] || '';
+          if (contentType.toLowerCase().includes('application/json')) {
+            const json = await apiResponse.json();
+            rawBody = JSON.stringify(json, null, 2);
+          } else {
+            rawBody = await apiResponse.text();
+          }
+        } catch {
+          rawBody = await apiResponse.text();
+        }
+
+        const rawOutputPath = path.join(DEBUG_DIR, `instagram-raw-api-${username}-${Date.now()}.json`);
+        const rawDebug = {
+          url: apiUrl,
+          method: 'GET',
+          requestHeaders: rawHeaders,
+          status: rawStatus,
+          responseHeaders: rawHeadersResp,
+          body: rawBody,
+          capturedAt: new Date().toISOString()
+        };
+
+        fs.writeFileSync(rawOutputPath, JSON.stringify(rawDebug, null, 2), 'utf-8');
+        console.log(`Resposta raw salva em: ${rawOutputPath}`);
+        console.log(`Status HTTP: ${rawStatus}`);
+        console.log(`Content-Type: ${rawHeadersResp['content-type']}`);
+
+        if (rawBody.length < 2000) {
+          console.log(`\nCorpo da resposta:\n${rawBody}`);
+        } else {
+          console.log(`\nCorpo da resposta (primeiros 500 chars):\n${rawBody.slice(0, 500)}...`);
+        }
+
+        return;
+      } catch (rawError) {
+        console.error('Erro na requisicao raw:', (rawError as Error).message);
+      }
+    }
+
     const scraper = new InstagramProfileScraper();
 
     const startedAt = Date.now();
@@ -264,6 +361,12 @@ async function run(): Promise<void> {
       console.log(`Tempo: ${durationMs}ms`);
       console.log(`Arquivo: ${profilePath}`);
       console.log('Formato do arquivo: CSV');
+      if (profile.bioLinks && profile.bioLinks.length > 0) {
+        console.log(`Links na bio: ${profile.bioLinks.length} link(s) encontrado(s)`);
+        profile.bioLinks.forEach((link, i) => {
+          console.log(`  ${i + 1}. ${link.title || '(sem título)'} -> ${link.url}`);
+        });
+      }
       return;
     }
 
