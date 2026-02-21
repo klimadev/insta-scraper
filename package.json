@@ -8,6 +8,7 @@
     "dev": "ts-node src/index.ts",
     "dev:google": "ts-node src/index.ts google",
     "test:stealth": "ts-node src/scripts/sannysoft-stealth.ts",
+    "test:instagram:url": "ts-node src/scripts/instagram-profile-debug.ts",
     "build": "rimraf dist && tsc"
   },
   "dependencies": {

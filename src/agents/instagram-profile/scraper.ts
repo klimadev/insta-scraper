@@ -21,6 +21,19 @@ const INSTAGRAM_LOGIN_URL_PATTERNS = [
 const LOGIN_NOTIFICATION_INTERVAL_MS = 25000;
 
 function extractProfileData(): Partial<InstagramProfile> {
+  function parseInstagramNumber(text: string): number {
+    const clean = text.replace(/\s/g, '').toUpperCase();
+    const match = clean.match(/[\d.,]+/);
+    if (!match) return 0;
+
+    let num = parseFloat(match[0].replace(',', '.'));
+
+    if (clean.includes('K')) num *= 1000;
+    else if (clean.includes('M')) num *= 1000000;
+
+    return Math.round(num);
+  }
+
   const header = document.querySelector('header');
   const section = header?.querySelector('section');
   const divs = section?.querySelectorAll(':scope > div');
@@ -49,19 +62,6 @@ function extractProfileData(): Partial<InstagramProfile> {
   bio = bio.replace(/\.\.\.?\s*mais\s*$/, '').trim();
   
   return { username, name, publicacoes, seguidores, seguindo, bio };
-}
-
-function parseInstagramNumber(text: string): number {
-  const clean = text.replace(/\s/g, '').toUpperCase();
-  const match = clean.match(/[\d.,]+/);
-  if (!match) return 0;
-  
-  let num = parseFloat(match[0].replace(',', '.'));
-  
-  if (clean.includes('K')) num *= 1000;
-  else if (clean.includes('M')) num *= 1000000;
-  
-  return Math.round(num);
 }
 
 export class InstagramProfileScraper {
@@ -118,8 +118,8 @@ export class InstagramProfileScraper {
     
     const hasLoginUrl = INSTAGRAM_LOGIN_URL_PATTERNS.some(pattern => url.includes(pattern));
     
-    if (!hasLoginUrl) {
-      return false;
+    if (hasLoginUrl) {
+      return true;
     }
     
     try {
