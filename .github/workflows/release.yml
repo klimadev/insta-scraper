@@ -16,15 +16,18 @@ jobs:
       fail-fast: false
       matrix:
         technique:
-          - id: pkg-raw
-            label: pkg direto (Node 20)
-            asset: out/insta-launcher-pkg-raw.exe
-          - id: pkg-gzip
-            label: pkg + compressao GZip (Node 20)
-            asset: out/insta-launcher-pkg-gzip.exe
-          - id: esbuild-pkg
-            label: esbuild bundle + pkg (Node 20)
-            asset: out/insta-launcher-esbuild-pkg.exe
+          - id: node-runtime
+            label: pacote zip com node_modules (Node instalado)
+            asset: out/insta-launcher-node-runtime.zip
+            entry: dist/index.js
+          - id: portable-node
+            label: pacote zip portatil com node.exe
+            asset: out/insta-launcher-portable-node.zip
+            entry: dist/index.js
+          - id: esbuild-runtime
+            label: esbuild + node_modules em zip (Node instalado)
+            asset: out/insta-launcher-esbuild-runtime.zip
+            entry: dist/index.bundle.js
     
     steps:
       - name: Checkout
@@ -41,24 +44,54 @@ jobs:
       - name: Build TypeScript
         run: npm run build
 
-      - name: Compile executable
+      - name: Package runtime
         id: compile
         shell: pwsh
         run: |
+          function New-RuntimeFolder {
+            param(
+              [string]$TargetDir,
+              [string]$EntryFile
+            )
+
+            if (Test-Path $TargetDir) {
+              Remove-Item $TargetDir -Recurse -Force
+            }
+
+            New-Item -ItemType Directory -Force -Path $TargetDir | Out-Null
+            Copy-Item dist "$TargetDir/dist" -Recurse -Force
+
+            if (Test-Path data) {
+              Copy-Item data "$TargetDir/data" -Recurse -Force
+            }
+
+            Copy-Item package.json "$TargetDir/package.json" -Force
+            Copy-Item package-lock.json "$TargetDir/package-lock.json" -Force
+
+            npm prune --omit=dev
+
+            Copy-Item node_modules "$TargetDir/node_modules" -Recurse -Force
+
+            Set-Content -Path "$TargetDir/start.cmd" -Value "@echo off`r`nnode $EntryFile"
+          }
+
           New-Item -ItemType Directory -Force -Path out | Out-Null
 
-          if ('${{ matrix.technique.id }}' -eq 'pkg-raw') {
-            npx @yao-pkg/pkg dist/index.js --targets node20-win-x64 --public --options node -o out/insta-launcher-pkg-raw.exe
+          if ('${{ matrix.technique.id }}' -eq 'esbuild-runtime') {
+            npx esbuild src/index.ts --bundle --platform=node --target=node20 --format=cjs --outfile=dist/index.bundle.js --external:playwright --external:chalk --external:ora --external:inquirer --external:fingerprint-generator --external:fingerprint-injector --external:ghost-cursor-playwright
           }
 
-          if ('${{ matrix.technique.id }}' -eq 'pkg-gzip') {
-            npx @yao-pkg/pkg dist/index.js --targets node20-win-x64 --public --options node --compress GZip -o out/insta-launcher-pkg-gzip.exe
+          $runtimeDir = "out/runtime-${{ matrix.technique.id }}"
+          $entryFile = '${{ matrix.technique.entry }}'
+          New-RuntimeFolder -TargetDir $runtimeDir -EntryFile $entryFile
+
+          if ('${{ matrix.technique.id }}' -eq 'portable-node') {
+            $nodeExe = (Get-Command node).Source
+            Copy-Item $nodeExe "$runtimeDir/node.exe" -Force
+            Set-Content -Path "$runtimeDir/start.cmd" -Value "@echo off`r`nnode.exe $entryFile"
           }
 
-          if ('${{ matrix.technique.id }}' -eq 'esbuild-pkg') {
-            npx esbuild src/index.ts --bundle --platform=node --target=node20 --format=cjs --outfile=dist/index.bundle.js
-            npx @yao-pkg/pkg dist/index.bundle.js --targets node20-win-x64 --public --options node -o out/insta-launcher-esbuild-pkg.exe
-          }
+          Compress-Archive -Path "$runtimeDir/*" -DestinationPath '${{ matrix.technique.asset }}' -Force
 
           $assetPath = '${{ matrix.technique.asset }}'
           $sizeBytes = (Get-Item $assetPath).Length
@@ -75,6 +108,7 @@ jobs:
           body: |
             Tecnica: `${{ matrix.technique.label }}`
             Arquivo: `${{ matrix.technique.asset }}`
+            Entrada: `${{ matrix.technique.entry }}`
             Tamanho aproximado: `${{ steps.compile.outputs.asset_size_mb }} MB`
           files: ${{ matrix.technique.asset }}
         env:
