@@ -10,25 +10,8 @@ permissions:
   contents: write
 
 jobs:
-  build:
+  build-release:
     runs-on: windows-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        technique:
-          - id: sea-dist
-            label: node SEA com build TypeScript
-            asset: insta-launcher-sea-dist.zip
-            entry: dist/index.js
-          - id: sea-esbuild
-            label: node SEA com esbuild
-            asset: insta-launcher-sea-esbuild.zip
-            entry: dist/index.bundle.js
-          - id: sea-esbuild-min
-            label: node SEA com esbuild minificado
-            asset: insta-launcher-sea-esbuild-min.zip
-            entry: dist/index.bundle.min.js
-    
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -46,31 +29,17 @@ jobs:
       - name: Build TypeScript
         run: npm run build
 
-      - name: Build technique entrypoint
-        shell: pwsh
-        run: |
-          if ('${{ matrix.technique.id }}' -eq 'sea-esbuild') {
-            npx esbuild src/index.ts --bundle --platform=node --target=node20 --format=cjs --packages=external --outfile=dist/index.bundle.js
-          }
-
-          if ('${{ matrix.technique.id }}' -eq 'sea-esbuild-min') {
-            npx esbuild src/index.ts --bundle --platform=node --target=node20 --format=cjs --packages=external --minify --outfile=dist/index.bundle.min.js
-          }
-
       - name: Compile and package
-        id: compile
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path out | Out-Null
 
-          $techniqueId = '${{ matrix.technique.id }}'
-          $entryFile = '${{ matrix.technique.entry }}'
-          $runtimeDir = "out/runtime-$techniqueId"
-          $prodDir = "out/prod-deps-$techniqueId"
-          $blobPath = "out/sea-prep-$techniqueId.blob"
-          $seaConfigPath = "out/sea-config-$techniqueId.json"
-          $seaEntryPath = "out/sea-entry-$techniqueId.cjs"
-          $exeName = "insta-launcher-$techniqueId.exe"
+          $runtimeDir = 'out/runtime-sea-portable'
+          $prodDir = 'out/prod-deps'
+          $blobPath = 'out/sea-prep.blob'
+          $seaConfigPath = 'out/sea-config.json'
+          $seaEntryPath = 'out/sea-entry.cjs'
+          $exeName = 'insta-launcher.exe'
           $exePath = "$runtimeDir/$exeName"
 
           if (Test-Path $runtimeDir) {
@@ -94,12 +63,13 @@ jobs:
 
           Copy-Item "$prodDir/node_modules" "$runtimeDir/node_modules" -Recurse -Force
           Copy-Item dist "$runtimeDir/dist" -Recurse -Force
+          Copy-Item package.json "$runtimeDir/package.json" -Force
 
           if (Test-Path data) {
             Copy-Item data "$runtimeDir/data" -Recurse -Force
           }
 
-          Set-Content -Path $seaEntryPath -Value "const path = require('path'); require(path.join(path.dirname(process.execPath), '$entryFile'));"
+          Set-Content -Path $seaEntryPath -Value "const path = require('path'); const { createRequire } = require('module'); const appRequire = createRequire(path.join(path.dirname(process.execPath), 'package.json')); appRequire('./dist/index.js');"
 
           $seaConfig = @{
             main = $seaEntryPath
@@ -132,45 +102,24 @@ jobs:
             Remove-Item $blobPath -Force
           }
 
-          Compress-Archive -Path "$runtimeDir/*" -DestinationPath "out/${{ matrix.technique.asset }}" -Force
-
-          $assetPath = "out/${{ matrix.technique.asset }}"
-          $sizeBytes = (Get-Item $assetPath).Length
-          $sizeMb = [math]::Round($sizeBytes / 1MB, 2)
-
-          "asset_size_mb=$sizeMb" >> $env:GITHUB_OUTPUT
-
-      - name: Upload technique artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.technique.id }}
-          path: out/${{ matrix.technique.asset }}
-
-  release:
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-    needs: build
-    steps:
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: release-assets
-          merge-multiple: true
+          Compress-Archive -Path "$runtimeDir/*" -DestinationPath 'out/insta-launcher-sea-portable.zip' -Force
 
       - name: Create Release
+        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ github.ref_name }}
           target_commitish: ${{ github.sha }}
           name: ${{ github.ref_name }}
           body: |
-            Build de distribuicao para Playwright com tecnicas de compilacao baseadas em Node SEA.
+            Build de distribuicao com Node SEA focado em compatibilidade completa com Playwright.
 
-            Arquivos publicados nesta release:
-            - insta-launcher-sea-dist.zip
-            - insta-launcher-sea-esbuild.zip
-            - insta-launcher-sea-esbuild-min.zip
-          files: release-assets/*
+            Conteudo do pacote:
+            - insta-launcher.exe (Node SEA)
+            - node_modules de producao completos
+            - dist compilado
+            - start.cmd para execucao
+          files: out/insta-launcher-sea-portable.zip
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
