@@ -126,7 +126,7 @@ jobs:
 
           npx postject $exePath NODE_SEA_BLOB $blobPath --sentinel-fuse NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2 --overwrite
 
-          Set-Content -Path "$runtimeDir/start.cmd" -Value "@echo off`r`n\"%~dp0$exeName\""
+          Set-Content -Path "$runtimeDir/start.cmd" -Value "@echo off`r`n`"%~dp0$exeName`""
 
           if (Test-Path $blobPath) {
             Remove-Item $blobPath -Force
