@@ -3,6 +3,7 @@ import * as path from 'path';
 import { GoogleSearchScraper } from './scraper';
 import { GoogleSearchConfig, SearchOutput } from './types';
 import { logger } from '../../cli/logger';
+import { toCsvRow } from '../../utils/csv';
 
 const OUTPUT_DIR = path.join(process.cwd(), 'output');
 
@@ -22,12 +23,41 @@ function ensureOutputDir(): void {
 
 function saveOutput(output: SearchOutput, customFile?: string): string {
   ensureOutputDir();
-  
-  const filename = customFile || `google-${sanitizeFilename(output.query)}-${Date.now()}.json`;
+
+  const filename = customFile || `google-${sanitizeFilename(output.query)}-${Date.now()}.csv`;
   const filepath = path.join(OUTPUT_DIR, filename);
-  
-  fs.writeFileSync(filepath, JSON.stringify(output, null, 2), 'utf-8');
-  
+
+  const header = toCsvRow([
+    'query',
+    'totalPages',
+    'totalResults',
+    'outputExtractedAt',
+    'title',
+    'url',
+    'description',
+    'source',
+    'status',
+    'resultExtractedAt',
+    'page'
+  ]);
+
+  const lines = output.results.map(result => toCsvRow([
+    output.query,
+    output.totalPages,
+    output.totalResults,
+    output.extractedAt,
+    result.title,
+    result.url,
+    result.description,
+    result.source,
+    result.status,
+    result.extractedAt,
+    result.page
+  ]));
+
+  const csvContent = [header, ...lines].join('\n');
+  fs.writeFileSync(filepath, csvContent, 'utf-8');
+
   return filepath;
 }
 

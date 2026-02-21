@@ -46,27 +46,11 @@ npm run test:instagram:url -- "https://www.instagram.com/nike/" --sessionid=seu_
 
 ### Resultados
 
-Os resultados sao salvos em `output/google-{query}-{timestamp}.json`:
+Os resultados sao salvos em `output/google-{query}-{timestamp}.csv`:
 
-```json
-{
-  "query": "termo de busca",
-  "totalPages": 3,
-  "totalResults": 45,
-  "extractedAt": "2026-02-19T14:30:00.000Z",
-  "results": [
-    {
-      "title": "Titulo do resultado",
-      "url": "https://exemplo.com",
-      "description": "Descricao do resultado...",
-      "source": "google",
-      "status": "pending_instagram",
-      "extractedAt": "2026-02-19T14:30:00.000Z",
-      "query": "termo de busca",
-      "page": 1
-    }
-  ]
-}
+```csv
+query,totalPages,totalResults,outputExtractedAt,title,url,description,source,status,resultExtractedAt,page
+termo de busca,3,45,2026-02-19T14:30:00.000Z,Titulo do resultado,https://exemplo.com,Descricao do resultado...,google,pending_instagram,2026-02-19T14:30:00.000Z,1
 ```
 
 O campo `status: "pending_instagram"` indica que o resultado esta pronto para ser processado pelo futuro Instagram Agent.

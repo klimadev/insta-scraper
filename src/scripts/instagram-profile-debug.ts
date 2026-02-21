@@ -16,6 +16,7 @@ import {
 } from '../agents/google-search/stealth-profile';
 import { FALLBACK_CHANNELS } from '../engine/browser-config';
 import { loadSessionState, saveSessionState, StorageStateData } from '../engine/session-manager';
+import { toCsvRow } from '../utils/csv';
 
 interface CliOptions {
   profileUrl: string;
@@ -78,6 +79,41 @@ function ensureDir(dirPath: string): void {
 
 function writeJsonFile(filePath: string, data: unknown): void {
   fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
+}
+
+function writeInstagramProfileCsv(filePath: string, profile: {
+  username: string;
+  name: string;
+  publicacoes: number;
+  seguidores: number;
+  seguindo: number;
+  bio: string;
+  url: string;
+  extractedAt: string;
+}): void {
+  const header = toCsvRow([
+    'username',
+    'name',
+    'publicacoes',
+    'seguidores',
+    'seguindo',
+    'bio',
+    'url',
+    'extractedAt'
+  ]);
+
+  const row = toCsvRow([
+    profile.username,
+    profile.name,
+    profile.publicacoes,
+    profile.seguidores,
+    profile.seguindo,
+    profile.bio,
+    profile.url,
+    profile.extractedAt
+  ]);
+
+  fs.writeFileSync(filePath, `${header}\n${row}`, 'utf-8');
 }
 
 async function launchInstagramContext(fingerprint: GeneratedFingerprint): Promise<{
@@ -221,13 +257,13 @@ async function run(): Promise<void> {
     const durationMs = Date.now() - startedAt;
 
     if (profile) {
-      const profilePath = path.join(OUTPUT_DIR, `instagram-profile-${profile.username}-${Date.now()}.json`);
-      writeJsonFile(profilePath, profile);
+      const profilePath = path.join(OUTPUT_DIR, `instagram-profile-${profile.username}-${Date.now()}.csv`);
+      writeInstagramProfileCsv(profilePath, profile);
 
       console.log('Extracao concluida com sucesso.');
       console.log(`Tempo: ${durationMs}ms`);
       console.log(`Arquivo: ${profilePath}`);
-      console.log(JSON.stringify(profile, null, 2));
+      console.log('Formato do arquivo: CSV');
       return;
     }
 
