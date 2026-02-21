@@ -16,18 +16,18 @@ jobs:
       fail-fast: false
       matrix:
         technique:
-          - id: node-runtime
-            label: pacote zip com node_modules (Node instalado)
-            asset: out/insta-launcher-node-runtime.zip
+          - id: sea-dist
+            label: node SEA com build TypeScript
+            asset: insta-launcher-sea-dist.zip
             entry: dist/index.js
-          - id: portable-node
-            label: pacote zip portatil com node.exe
-            asset: out/insta-launcher-portable-node.zip
-            entry: dist/index.js
-          - id: esbuild-runtime
-            label: esbuild + node_modules em zip (Node instalado)
-            asset: out/insta-launcher-esbuild-runtime.zip
+          - id: sea-esbuild
+            label: node SEA com esbuild
+            asset: insta-launcher-sea-esbuild.zip
             entry: dist/index.bundle.js
+          - id: sea-esbuild-min
+            label: node SEA com esbuild minificado
+            asset: insta-launcher-sea-esbuild-min.zip
+            entry: dist/index.bundle.min.js
     
     steps:
       - name: Checkout
@@ -39,77 +39,138 @@ jobs:
           node-version: '20'
 
       - name: Install dependencies
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
         run: npm ci
 
       - name: Build TypeScript
         run: npm run build
 
-      - name: Package runtime
+      - name: Build technique entrypoint
+        shell: pwsh
+        run: |
+          if ('${{ matrix.technique.id }}' -eq 'sea-esbuild') {
+            npx esbuild src/index.ts --bundle --platform=node --target=node20 --format=cjs --packages=external --outfile=dist/index.bundle.js
+          }
+
+          if ('${{ matrix.technique.id }}' -eq 'sea-esbuild-min') {
+            npx esbuild src/index.ts --bundle --platform=node --target=node20 --format=cjs --packages=external --minify --outfile=dist/index.bundle.min.js
+          }
+
+      - name: Compile and package
         id: compile
         shell: pwsh
         run: |
-          function New-RuntimeFolder {
-            param(
-              [string]$TargetDir,
-              [string]$EntryFile
-            )
-
-            if (Test-Path $TargetDir) {
-              Remove-Item $TargetDir -Recurse -Force
-            }
-
-            New-Item -ItemType Directory -Force -Path $TargetDir | Out-Null
-            Copy-Item dist "$TargetDir/dist" -Recurse -Force
-
-            if (Test-Path data) {
-              Copy-Item data "$TargetDir/data" -Recurse -Force
-            }
-
-            Copy-Item package.json "$TargetDir/package.json" -Force
-            Copy-Item package-lock.json "$TargetDir/package-lock.json" -Force
-
-            npm prune --omit=dev
-
-            Copy-Item node_modules "$TargetDir/node_modules" -Recurse -Force
-
-            Set-Content -Path "$TargetDir/start.cmd" -Value "@echo off`r`nnode $EntryFile"
-          }
-
           New-Item -ItemType Directory -Force -Path out | Out-Null
 
-          if ('${{ matrix.technique.id }}' -eq 'esbuild-runtime') {
-            npx esbuild src/index.ts --bundle --platform=node --target=node20 --format=cjs --outfile=dist/index.bundle.js --external:playwright --external:chalk --external:ora --external:inquirer --external:fingerprint-generator --external:fingerprint-injector --external:ghost-cursor-playwright
-          }
-
-          $runtimeDir = "out/runtime-${{ matrix.technique.id }}"
+          $techniqueId = '${{ matrix.technique.id }}'
           $entryFile = '${{ matrix.technique.entry }}'
-          New-RuntimeFolder -TargetDir $runtimeDir -EntryFile $entryFile
+          $runtimeDir = "out/runtime-$techniqueId"
+          $prodDir = "out/prod-deps-$techniqueId"
+          $blobPath = "out/sea-prep-$techniqueId.blob"
+          $seaConfigPath = "out/sea-config-$techniqueId.json"
+          $seaEntryPath = "out/sea-entry-$techniqueId.cjs"
+          $exeName = "insta-launcher-$techniqueId.exe"
+          $exePath = "$runtimeDir/$exeName"
 
-          if ('${{ matrix.technique.id }}' -eq 'portable-node') {
-            $nodeExe = (Get-Command node).Source
-            Copy-Item $nodeExe "$runtimeDir/node.exe" -Force
-            Set-Content -Path "$runtimeDir/start.cmd" -Value "@echo off`r`nnode.exe $entryFile"
+          if (Test-Path $runtimeDir) {
+            Remove-Item $runtimeDir -Recurse -Force
           }
 
-          Compress-Archive -Path "$runtimeDir/*" -DestinationPath '${{ matrix.technique.asset }}' -Force
+          if (Test-Path $prodDir) {
+            Remove-Item $prodDir -Recurse -Force
+          }
 
-          $assetPath = '${{ matrix.technique.asset }}'
+          New-Item -ItemType Directory -Force -Path $runtimeDir | Out-Null
+          New-Item -ItemType Directory -Force -Path $prodDir | Out-Null
+
+          Copy-Item package.json "$prodDir/package.json" -Force
+          Copy-Item package-lock.json "$prodDir/package-lock.json" -Force
+
+          Push-Location $prodDir
+          $env:PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD = '1'
+          npm ci --omit=dev
+          Pop-Location
+
+          Copy-Item "$prodDir/node_modules" "$runtimeDir/node_modules" -Recurse -Force
+          Copy-Item dist "$runtimeDir/dist" -Recurse -Force
+
+          if (Test-Path data) {
+            Copy-Item data "$runtimeDir/data" -Recurse -Force
+          }
+
+          Set-Content -Path $seaEntryPath -Value "const path = require('path'); require(path.join(path.dirname(process.execPath), '$entryFile'));"
+
+          $seaConfig = @{
+            main = $seaEntryPath
+            output = $blobPath
+            disableExperimentalSEAWarning = $true
+            useSnapshot = $false
+            useCodeCache = $false
+          } | ConvertTo-Json -Compress
+
+          Set-Content -Path $seaConfigPath -Value $seaConfig
+
+          node --experimental-sea-config $seaConfigPath
+
+          $nodeExe = (Get-Command node).Source
+          Copy-Item $nodeExe $exePath -Force
+
+          $signTool = Get-Command signtool -ErrorAction SilentlyContinue
+          if ($signTool) {
+            try {
+              signtool remove /s $exePath
+            } catch {
+            }
+          }
+
+          npx postject $exePath NODE_SEA_BLOB $blobPath --sentinel-fuse NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2 --overwrite
+
+          Set-Content -Path "$runtimeDir/start.cmd" -Value "@echo off`r`n\"%~dp0$exeName\""
+
+          if (Test-Path $blobPath) {
+            Remove-Item $blobPath -Force
+          }
+
+          Compress-Archive -Path "$runtimeDir/*" -DestinationPath "out/${{ matrix.technique.asset }}" -Force
+
+          $assetPath = "out/${{ matrix.technique.asset }}"
           $sizeBytes = (Get-Item $assetPath).Length
           $sizeMb = [math]::Round($sizeBytes / 1MB, 2)
 
           "asset_size_mb=$sizeMb" >> $env:GITHUB_OUTPUT
 
+      - name: Upload technique artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.technique.id }}
+          path: out/${{ matrix.technique.asset }}
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: ${{ github.ref_name }}-${{ matrix.technique.id }}
+          tag_name: ${{ github.ref_name }}
           target_commitish: ${{ github.sha }}
-          name: ${{ github.ref_name }} | ${{ matrix.technique.label }}
+          name: ${{ github.ref_name }}
           body: |
-            Tecnica: `${{ matrix.technique.label }}`
-            Arquivo: `${{ matrix.technique.asset }}`
-            Entrada: `${{ matrix.technique.entry }}`
-            Tamanho aproximado: `${{ steps.compile.outputs.asset_size_mb }} MB`
-          files: ${{ matrix.technique.asset }}
+            Build de distribuicao para Playwright com tecnicas de compilacao baseadas em Node SEA.
+
+            Arquivos publicados nesta release:
+            - insta-launcher-sea-dist.zip
+            - insta-launcher-sea-esbuild.zip
+            - insta-launcher-sea-esbuild-min.zip
+          files: release-assets/*
+          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
