@@ -57,7 +57,6 @@ npm install           # Instalar dependencias
 npm run dev           # Instagram (desenvolvimento)
 npm run dev:google    # Google Search (desenvolvimento)
 npm run build         # Compilar TypeScript
-npm run compile       # Gerar .exe
 ```
 
 ## Criar Release
@@ -74,8 +73,8 @@ git push origin v1.0.0
 
 O GitHub Actions ira automaticamente:
 1. Compilar o projeto
-2. Gerar o executavel Windows
-3. Criar uma Release com o .exe anexado
+2. Gerar pacote de distribuicao Windows (Node SEA + deps)
+3. Criar uma Release com o .zip anexado
 
 **Importante**: Apenas tags no formato `v*` (ex: `v1.0.0`, `v1.1.0`) disparam o workflow de release.
 
@@ -84,13 +83,12 @@ O GitHub Actions ira automaticamente:
 - Node.js 20 + TypeScript 5
 - Playwright (automacao browser)
 - chalk v4 + ora v5 (CLI)
-- bun (empacotamento .exe)
+- Node SEA + postject (distribuicao)
 
 ## Pre-requisitos
 
 - Google Chrome ou Microsoft Edge instalado
 - Windows 10/11
-- Bun 1.x (para gerar o .exe via `npm run compile`)
 
 ## Licenca
 

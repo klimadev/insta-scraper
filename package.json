@@ -8,8 +8,7 @@
     "dev": "ts-node src/index.ts",
     "dev:google": "ts-node src/index.ts google",
     "test:stealth": "ts-node src/scripts/sannysoft-stealth.ts",
-    "build": "rimraf dist && tsc",
-    "compile": "npm run build && rimraf out insta-launcher.exe && bun build dist/index.js --compile --packages bundle --external electron --outfile out/insta-launcher.exe"
+    "build": "rimraf dist && tsc"
   },
   "dependencies": {
     "chalk": "^4.1.2",
@@ -23,6 +22,7 @@
   "devDependencies": {
     "@types/inquirer": "^9.0.9",
     "@types/node": "^20.10.0",
+    "esbuild": "^0.27.3",
     "rimraf": "^5.0.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.3.0"
