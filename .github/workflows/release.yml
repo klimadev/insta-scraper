@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -11,6 +12,19 @@ permissions:
 jobs:
   build:
     runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        technique:
+          - id: pkg-raw
+            label: pkg direto (Node 20)
+            asset: out/insta-launcher-pkg-raw.exe
+          - id: pkg-gzip
+            label: pkg + compressao GZip (Node 20)
+            asset: out/insta-launcher-pkg-gzip.exe
+          - id: esbuild-pkg
+            label: esbuild bundle + pkg (Node 20)
+            asset: out/insta-launcher-esbuild-pkg.exe
     
     steps:
       - name: Checkout
@@ -28,12 +42,40 @@ jobs:
         run: npm run build
 
       - name: Compile executable
-        run: npm run compile
+        id: compile
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path out | Out-Null
+
+          if ('${{ matrix.technique.id }}' -eq 'pkg-raw') {
+            npx @yao-pkg/pkg dist/index.js --targets node20-win-x64 --public --options node -o out/insta-launcher-pkg-raw.exe
+          }
+
+          if ('${{ matrix.technique.id }}' -eq 'pkg-gzip') {
+            npx @yao-pkg/pkg dist/index.js --targets node20-win-x64 --public --options node --compress GZip -o out/insta-launcher-pkg-gzip.exe
+          }
+
+          if ('${{ matrix.technique.id }}' -eq 'esbuild-pkg') {
+            npx esbuild src/index.ts --bundle --platform=node --target=node20 --format=cjs --outfile=dist/index.bundle.js
+            npx @yao-pkg/pkg dist/index.bundle.js --targets node20-win-x64 --public --options node -o out/insta-launcher-esbuild-pkg.exe
+          }
+
+          $assetPath = '${{ matrix.technique.asset }}'
+          $sizeBytes = (Get-Item $assetPath).Length
+          $sizeMb = [math]::Round($sizeBytes / 1MB, 2)
+
+          "asset_size_mb=$sizeMb" >> $env:GITHUB_OUTPUT
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          files: out/insta-launcher.exe
-          generate_release_notes: true
+          tag_name: ${{ github.ref_name }}-${{ matrix.technique.id }}
+          target_commitish: ${{ github.sha }}
+          name: ${{ github.ref_name }} | ${{ matrix.technique.label }}
+          body: |
+            Tecnica: `${{ matrix.technique.label }}`
+            Arquivo: `${{ matrix.technique.asset }}`
+            Tamanho aproximado: `${{ steps.compile.outputs.asset_size_mb }} MB`
+          files: ${{ matrix.technique.asset }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
