@@ -1,6 +1,7 @@
 import { Page, BrowserContext } from 'playwright';
 import { InstagramProfile } from './types';
 import { logger } from '../../cli/logger';
+import { resolveInstagramSessionIdFromEnv } from './session';
 
 const INSTAGRAM_PROFILE_SELECTORS = {
   headerSection: 'header section',
@@ -19,6 +20,35 @@ const INSTAGRAM_LOGIN_URL_PATTERNS = [
 ];
 
 const LOGIN_NOTIFICATION_INTERVAL_MS = 25000;
+const INSTAGRAM_WEB_APP_ID = '936619743392459';
+const INSTAGRAM_WEB_PROFILE_INFO_ENDPOINT = 'https://www.instagram.com/api/v1/users/web_profile_info/?username=';
+const INSTAGRAM_WEB_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36';
+const INSTAGRAM_API_TIMEOUT_MS = 15000;
+const INSTAGRAM_API_MAX_ATTEMPTS = 3;
+const INSTAGRAM_API_RETRY_BASE_MS = 900;
+
+interface InstagramWebProfileInfoResponse {
+  data?: {
+    user?: {
+      username?: string;
+      full_name?: string;
+      biography?: string;
+      edge_followed_by?: {
+        count?: number;
+      };
+      edge_follow?: {
+        count?: number;
+      };
+      edge_owner_to_timeline_media?: {
+        count?: number;
+      };
+      follower_count?: number;
+      following_count?: number;
+      media_count?: number;
+    };
+  };
+  status?: string;
+}
 
 function extractProfileData(): Partial<InstagramProfile> {
   function parseInstagramNumber(text: string): number {
@@ -67,6 +97,11 @@ function extractProfileData(): Partial<InstagramProfile> {
 export class InstagramProfileScraper {
   async scrapeProfile(page: Page, profileUrl: string): Promise<InstagramProfile | null> {
     try {
+      const apiProfile = await this.tryApiProfileExtraction(page, profileUrl);
+      if (apiProfile) {
+        return apiProfile;
+      }
+
       await page.goto(profileUrl, {
         waitUntil: 'domcontentloaded',
         timeout: 60000
@@ -99,6 +134,181 @@ export class InstagramProfileScraper {
     } catch (error) {
       return null;
     }
+  }
+
+  private async tryApiProfileExtraction(page: Page, profileUrl: string): Promise<InstagramProfile | null> {
+    const username = this.extractUsernameFromProfileUrl(profileUrl);
+    if (!username) {
+      return null;
+    }
+
+    let sessionId = resolveInstagramSessionIdFromEnv();
+
+    if (sessionId) {
+      await this.injectSessionCookie(page, sessionId);
+      logger.info('Instagram: sessionid encontrado em INSTAGRAM_SESSIONID.');
+    } else {
+      sessionId = await this.getSessionIdFromContext(page);
+      if (sessionId) {
+        logger.info('Instagram: sessionid detectado automaticamente na sessao do browser.');
+      }
+    }
+
+    let lastStatus: number | null = null;
+    let lastError: string | null = null;
+
+    for (let attempt = 1; attempt <= INSTAGRAM_API_MAX_ATTEMPTS; attempt++) {
+      try {
+        const response = await page.request.get(
+          `${INSTAGRAM_WEB_PROFILE_INFO_ENDPOINT}${encodeURIComponent(username)}`,
+          {
+            timeout: INSTAGRAM_API_TIMEOUT_MS,
+            failOnStatusCode: false,
+            headers: this.buildApiHeaders(sessionId, profileUrl)
+          }
+        );
+
+        lastStatus = response.status();
+
+        if (lastStatus === 200) {
+          const contentType = response.headers()['content-type'] || '';
+          if (!contentType.toLowerCase().includes('application/json')) {
+            lastError = 'RESPOSTA_NAO_JSON';
+          } else {
+            const payload = await response.json() as InstagramWebProfileInfoResponse;
+            const mapped = this.mapApiPayloadToProfile(payload, profileUrl);
+            if (mapped) {
+              logger.info(`Instagram: perfil @${username} extraido via web_profile_info.`);
+              return mapped;
+            }
+            lastError = 'PAYLOAD_INVALIDO';
+          }
+        } else if (lastStatus === 404) {
+          logger.warn(`Instagram: perfil @${username} nao encontrado via endpoint.`);
+          return null;
+        } else {
+          lastError = `HTTP_${lastStatus}`;
+        }
+      } catch (error) {
+        const err = error as Error;
+        lastError = err.message;
+      }
+
+      if (attempt < INSTAGRAM_API_MAX_ATTEMPTS) {
+        const jitter = Math.floor(Math.random() * 250);
+        const waitTime = INSTAGRAM_API_RETRY_BASE_MS * attempt + jitter;
+        await page.waitForTimeout(waitTime);
+      }
+    }
+
+    logger.warn(
+      `Instagram: fallback para DOM (endpoint bloqueado ou instavel${lastStatus ? `, status ${lastStatus}` : ''}${lastError ? `, motivo: ${lastError}` : ''}).`
+    );
+
+    return null;
+  }
+
+  private async getSessionIdFromContext(page: Page): Promise<string | null> {
+    try {
+      const cookies = await page.context().cookies('https://www.instagram.com');
+      const sessionCookie = cookies.find(cookie => cookie.name === 'sessionid');
+      if (!sessionCookie || !sessionCookie.value) {
+        return null;
+      }
+
+      const value = sessionCookie.value.trim();
+      return value || null;
+    } catch {
+      return null;
+    }
+  }
+
+  private async injectSessionCookie(page: Page, sessionId: string): Promise<void> {
+    const expiresAt = Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 30;
+
+    await page.context().addCookies([
+      {
+        name: 'sessionid',
+        value: sessionId,
+        domain: '.instagram.com',
+        path: '/',
+        expires: expiresAt,
+        httpOnly: true,
+        secure: true,
+        sameSite: 'Lax'
+      }
+    ]);
+  }
+
+  private buildApiHeaders(sessionId: string | null, profileUrl: string): Record<string, string> {
+    const headers: Record<string, string> = {
+      'x-ig-app-id': INSTAGRAM_WEB_APP_ID,
+      'x-requested-with': 'XMLHttpRequest',
+      'accept-language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
+      'user-agent': INSTAGRAM_WEB_USER_AGENT,
+      referer: profileUrl
+    };
+
+    if (sessionId) {
+      headers.cookie = `sessionid=${sessionId}`;
+    }
+
+    return headers;
+  }
+
+  private extractUsernameFromProfileUrl(profileUrl: string): string | null {
+    try {
+      const parsed = new URL(profileUrl);
+      const segments = parsed.pathname.split('/').filter(Boolean);
+      if (segments.length === 0) {
+        return null;
+      }
+
+      return segments[0];
+    } catch {
+      return null;
+    }
+  }
+
+  private mapApiPayloadToProfile(payload: InstagramWebProfileInfoResponse, profileUrl: string): InstagramProfile | null {
+    const user = payload.data?.user;
+    if (!user?.username) {
+      return null;
+    }
+
+    const publicacoes = this.resolveCount(
+      user.edge_owner_to_timeline_media?.count,
+      user.media_count
+    );
+    const seguidores = this.resolveCount(
+      user.edge_followed_by?.count,
+      user.follower_count
+    );
+    const seguindo = this.resolveCount(
+      user.edge_follow?.count,
+      user.following_count
+    );
+
+    return {
+      username: user.username,
+      name: user.full_name || '',
+      publicacoes,
+      seguidores,
+      seguindo,
+      bio: user.biography || '',
+      url: profileUrl,
+      extractedAt: new Date().toISOString()
+    };
+  }
+
+  private resolveCount(...values: Array<number | undefined>): number {
+    for (const value of values) {
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        return Math.max(0, Math.round(value));
+      }
+    }
+
+    return 0;
   }
   
   private async closeLoginDialogIfPresent(page: Page): Promise<void> {

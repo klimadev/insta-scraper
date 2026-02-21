@@ -1,7 +1,12 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { Browser, BrowserContext, Page } from 'playwright';
-import { InstagramProfileScraper, parseInstagramUrl } from '../agents/instagram-profile';
+import {
+  InstagramProfileScraper,
+  parseInstagramUrl,
+  maskSessionId,
+  resolveInstagramSessionIdFromEnv
+} from '../agents/instagram-profile';
 import { launchStealthBrowser } from '../agents/google-search/stealth-bootstrap';
 import {
   generateSessionFingerprint,
@@ -15,6 +20,7 @@ import { loadSessionState, saveSessionState, StorageStateData } from '../engine/
 interface CliOptions {
   profileUrl: string;
   debug: boolean;
+  sessionId: string | null;
 }
 
 interface FailureDebugInfo {
@@ -39,10 +45,16 @@ const DEBUG_DIR = path.join(OUTPUT_DIR, 'debug');
 function parseArgs(args: string[]): CliOptions {
   let profileUrl = '';
   let debug = false;
+  let sessionId: string | null = null;
 
   for (const arg of args) {
     if (arg === '--debug') {
       debug = true;
+      continue;
+    }
+
+    if (arg.startsWith('--sessionid=')) {
+      sessionId = arg.substring('--sessionid='.length).trim() || null;
       continue;
     }
 
@@ -52,10 +64,10 @@ function parseArgs(args: string[]): CliOptions {
   }
 
   if (!profileUrl) {
-    throw new Error('USAGE: npm run test:instagram:url -- "https://www.instagram.com/usuario/" [--debug]');
+    throw new Error('USAGE: npm run test:instagram:url -- "https://www.instagram.com/usuario/" [--debug] [--sessionid=SEU_ID]');
   }
 
-  return { profileUrl, debug };
+  return { profileUrl, debug, sessionId };
 }
 
 function ensureDir(dirPath: string): void {
@@ -146,8 +158,24 @@ async function captureFailureDebug(page: Page, normalizedUrl: string): Promise<F
   };
 }
 
+async function detectSessionIdFromContext(context: BrowserContext): Promise<string | null> {
+  try {
+    const cookies = await context.cookies('https://www.instagram.com');
+    const sessionCookie = cookies.find(cookie => cookie.name === 'sessionid');
+    const value = sessionCookie?.value?.trim() || '';
+    return value || null;
+  } catch {
+    return null;
+  }
+}
+
 async function run(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
+
+  if (options.sessionId) {
+    process.env.INSTAGRAM_SESSIONID = options.sessionId;
+  }
+
   const urlInfo = parseInstagramUrl(options.profileUrl);
 
   if (!urlInfo.isProfile || !urlInfo.normalizedUrl) {
@@ -164,6 +192,13 @@ async function run(): Promise<void> {
   console.log(`URL normalizada: ${urlInfo.normalizedUrl}`);
   console.log(`Debug ativo: ${options.debug ? 'sim' : 'nao'}`);
 
+  const resolvedSessionId = resolveInstagramSessionIdFromEnv();
+  if (resolvedSessionId) {
+    console.log(`INSTAGRAM_SESSIONID detectada: ${maskSessionId(resolvedSessionId)}`);
+  } else {
+    console.log('INSTAGRAM_SESSIONID nao definida. A deteccao automatica da sessao sera tentada.');
+  }
+
   try {
     const launched = await launchInstagramContext(fingerprint);
     browser = launched.browser;
@@ -172,6 +207,13 @@ async function run(): Promise<void> {
     console.log(`Canal de browser: ${launched.channelUsed}`);
 
     const page = await context.newPage();
+    const contextSessionId = await detectSessionIdFromContext(context);
+    if (contextSessionId) {
+      console.log(`Sessionid da sessao atual detectado automaticamente: ${maskSessionId(contextSessionId)}`);
+    } else {
+      console.log('Nenhum sessionid detectado automaticamente na sessao atual.');
+    }
+
     const scraper = new InstagramProfileScraper();
 
     const startedAt = Date.now();

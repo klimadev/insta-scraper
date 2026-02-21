@@ -6,7 +6,7 @@
         "value": "0jgA0gRLngIZj5Q_rzx-e9",
         "domain": ".instagram.com",
         "path": "/",
-        "expires": 1806198143.435905,
+        "expires": 1806215604.937,
         "httpOnly": false,
         "secure": true,
         "sameSite": "Lax"
@@ -112,5 +112,5 @@
       }
     ]
   },
-  "createdAt": "2026-02-21T01:42:37.239Z"
+  "createdAt": "2026-02-21T06:33:25.908Z"
 }

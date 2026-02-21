@@ -23,6 +23,27 @@ insta-launcher google "termo de busca" --pages=5
 
 Se o Google detectar automatizacao, o programa exibira um aviso. Resolva o CAPTCHA manualmente no browser aberto e a extracao continuara automaticamente.
 
+### Instagram sem login (melhor esforco)
+
+Quando um resultado do Google for perfil do Instagram, a extracao agora tenta primeiro o endpoint interno `web_profile_info` para reduzir redirecionamento ao login.
+
+O scraper tenta detectar `sessionid` automaticamente a partir da sessao atual do browser (quando ja existe login salvo).
+
+Opcionalmente, voce pode informar um cookie de sessao para aumentar a chance de sucesso:
+
+```bash
+set INSTAGRAM_SESSIONID=seu_sessionid_aqui
+insta-launcher google "sua busca"
+```
+
+Observacao: nao e garantia de 100%. Dependendo do risco da conexao/IP, o Instagram ainda pode exigir login manual.
+
+No teste individual de perfil, tambem e possivel passar direto por argumento:
+
+```bash
+npm run test:instagram:url -- "https://www.instagram.com/nike/" --sessionid=seu_sessionid_aqui
+```
+
 ### Resultados
 
 Os resultados sao salvos em `output/google-{query}-{timestamp}.json`:
