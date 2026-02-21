@@ -96,3 +96,20 @@ export function findFirstInstagramProfileUrl(urls: string[]): InstagramUrlInfo |
   }
   return null;
 }
+
+export function findInstagramProfileUrls(urls: string[]): InstagramUrlInfo[] {
+  const seen = new Set<string>();
+  const results: InstagramUrlInfo[] = [];
+
+  for (const url of urls) {
+    const info = parseInstagramUrl(url);
+    if (info.isProfile && info.username && info.normalizedUrl) {
+      if (!seen.has(info.username)) {
+        seen.add(info.username);
+        results.push(info);
+      }
+    }
+  }
+
+  return results;
+}

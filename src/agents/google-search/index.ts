@@ -38,7 +38,15 @@ function saveOutput(output: SearchOutput, customFile?: string): string {
     'source',
     'status',
     'resultExtractedAt',
-    'page'
+    'page',
+    'instagramUsername',
+    'instagramName',
+    'instagramPublicacoes',
+    'instagramSeguidores',
+    'instagramSeguindo',
+    'instagramBio',
+    'instagramLink',
+    'instagramExtractedAt'
   ]);
 
   const lines = output.results.map(result => toCsvRow([
@@ -52,7 +60,15 @@ function saveOutput(output: SearchOutput, customFile?: string): string {
     result.source,
     result.status,
     result.extractedAt,
-    result.page
+    result.page,
+    result.instagramUsername || '',
+    result.instagramName || '',
+    result.instagramPublicacoes || '',
+    result.instagramSeguidores || '',
+    result.instagramSeguindo || '',
+    result.instagramBio || '',
+    result.instagramLink || '',
+    result.instagramExtractedAt || ''
   ]));
 
   const csvContent = [header, ...lines].join('\n');

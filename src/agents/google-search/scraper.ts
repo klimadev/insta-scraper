@@ -23,7 +23,7 @@ import {
   NEXT_PAGE_ROLE,
   NEXT_PAGE_NAME
 } from './selectors';
-import { InstagramProfileScraper, findFirstInstagramProfileUrl, InstagramProfile } from '../instagram-profile';
+import { InstagramProfileScraper, findInstagramProfileUrls, InstagramProfile, InstagramUrlInfo } from '../instagram-profile';
 
 const SEARCH_INPUT_SELECTOR = 'textarea[name="q"], input[name="q"]';
 const RESULTS_READY_SELECTOR = '#search h3, #rso h3, h3';
@@ -62,7 +62,7 @@ export class GoogleSearchScraper {
         finalConfig.maxPages
       );
       
-      await this.scrapeFirstInstagramProfile(results);
+      await this.scrapeInstagramProfiles(results);
       
       return this.buildOutput(finalConfig.query, finalConfig.maxPages, results);
     } finally {
@@ -467,7 +467,7 @@ export class GoogleSearchScraper {
       const enriched = results.map(r => ({
         ...r,
         source: 'google' as const,
-        status: 'pending_instagram' as const,
+        status: 'not_instagram' as const,
         extractedAt: new Date().toISOString(),
         query,
         page: currentPage
@@ -574,26 +574,102 @@ export class GoogleSearchScraper {
     }
   }
 
-  private async scrapeFirstInstagramProfile(results: SearchResult[]): Promise<void> {
+  private async scrapeInstagramProfiles(results: SearchResult[]): Promise<void> {
     if (!this.context || results.length === 0) return;
 
     const urls = results.map(r => r.url);
-    const instagramInfo = findFirstInstagramProfileUrl(urls);
+    const profileUrls = findInstagramProfileUrls(urls);
 
-    if (!instagramInfo || !instagramInfo.normalizedUrl) {
+    if (profileUrls.length === 0) {
       logger.warn('Nenhum perfil do Instagram encontrado nos resultados.');
       return;
     }
 
-    logger.update(`Acessando perfil Instagram: @${instagramInfo.username}`);
+    const MAX_INSTAGRAM_PROFILES = 25;
+    const profilesToProcess = profileUrls.slice(0, MAX_INSTAGRAM_PROFILES);
+    const skipped = profileUrls.length - profilesToProcess.length;
+
+    logger.update(`Encontrados ${profileUrls.length} perfis. Processando ate ${MAX_INSTAGRAM_PROFILES}...`);
 
     const scraper = new InstagramProfileScraper();
-    const profile = await scraper.scrapeProfileInNewTab(this.context, instagramInfo.normalizedUrl);
 
-    if (profile) {
-      this.printInstagramProfile(profile);
-    } else {
-      logger.warn('Nao foi possivel extrair dados do perfil.');
+    const processed = new Set<string>();
+    let successCount = 0;
+    let failCount = 0;
+    let duplicateCount = 0;
+    let skipCount = 0;
+
+    for (let i = 0; i < profilesToProcess.length; i++) {
+      const profileInfo = profilesToProcess[i];
+      const username = profileInfo.username!;
+
+      if (processed.has(username)) {
+        duplicateCount++;
+        this.markResultAsDuplicate(results, username);
+        continue;
+      }
+      processed.add(username);
+
+      logger.update(`Processando perfil ${i + 1}/${profilesToProcess.length}: @${username}`);
+
+      const profile = await scraper.scrapeProfileInNewTab(
+        this.context,
+        profileInfo.normalizedUrl!
+      );
+
+      if (profile) {
+        this.updateResultWithInstagramData(results, profile);
+        this.printInstagramProfile(profile);
+        successCount++;
+      } else {
+        this.markResultAsFailed(results, username);
+        failCount++;
+      }
+
+      if (i < profilesToProcess.length - 1) {
+        const baseDelay = 3500;
+        const jitter = Math.floor(Math.random() * 3000);
+        const delay = baseDelay + jitter;
+        await this.page!.waitForTimeout(delay);
+      }
+    }
+
+    if (skipped > 0) {
+      skipCount = skipped;
+      logger.info(`Limite atingido. ${skipped} perfis ignorados (max: ${MAX_INSTAGRAM_PROFILES}).`);
+    }
+
+    logger.succeed(
+      `Instagram: ${successCount} OK, ${failCount} falha(s), ${duplicateCount} duplicado(s), ${skipCount} ignorado(s)`
+    );
+  }
+
+  private markResultAsDuplicate(results: SearchResult[], username: string): void {
+    const result = results.find(r => r.url.includes(`instagram.com/${username}`));
+    if (result) {
+      result.status = 'duplicate_instagram';
+    }
+  }
+
+  private markResultAsFailed(results: SearchResult[], username: string): void {
+    const result = results.find(r => r.url.includes(`instagram.com/${username}`));
+    if (result) {
+      result.status = 'instagram_failed';
+    }
+  }
+
+  private updateResultWithInstagramData(results: SearchResult[], profile: InstagramProfile): void {
+    const result = results.find(r => r.url.includes(`instagram.com/${profile.username}`));
+    if (result) {
+      result.status = 'instagram_ok';
+      result.instagramUsername = profile.username;
+      result.instagramName = profile.name;
+      result.instagramPublicacoes = profile.publicacoes;
+      result.instagramSeguidores = profile.seguidores;
+      result.instagramSeguindo = profile.seguindo;
+      result.instagramBio = profile.bio;
+      result.instagramLink = profile.link;
+      result.instagramExtractedAt = profile.extractedAt;
     }
   }
 

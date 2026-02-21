@@ -5,5 +5,6 @@ export {
   BioLink,
   InstagramUrlInfo,
   parseInstagramUrl,
-  findFirstInstagramProfileUrl
+  findFirstInstagramProfileUrl,
+  findInstagramProfileUrls
 } from './types';

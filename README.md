@@ -25,9 +25,20 @@ Se o Google detectar automatizacao, o programa exibira um aviso. Resolva o CAPTC
 
 ### Instagram sem login (melhor esforco)
 
-Quando um resultado do Google for perfil do Instagram, a extracao agora tenta primeiro o endpoint interno `web_profile_info` para reduzir redirecionamento ao login.
+Quando um resultado do Google for perfil do Instagram, a extracao agora processa **todos os perfis unicos** encontrados (ate 25 por execucao), com ritmo conservador entre requisicoes para evitar deteccao.
 
-O scraper tenta detectar `sessionid` automaticamente a partir da sessao atual do browser (quando ja existe login salvo).
+O scraper:
+1. Deduplica perfis por username (mesma pessoa nao e processada duas vezes)
+2. Aplica delay de 3.5s + jitter aleatorio (ate 3s) entre cada perfil
+3. Tenta primeiro o endpoint interno `web_profile_info` para reduzir redirecionamento ao login
+4. Faz fallback para extracao via DOM se a API falhar
+
+Status disponiveis no campo `status`:
+- `not_instagram` - resultado nao e perfil do Instagram
+- `instagram_ok` - perfil extratido com sucesso
+- `instagram_failed` - falha na extracao do perfil
+- `duplicate_instagram` - perfil duplicado (ja processado)
+- `instagram_skipped_limit` - perfil ignorado por limite de 25 por execucao
 
 Opcionalmente, voce pode informar um cookie de sessao para aumentar a chance de sucesso:
 
@@ -49,11 +60,16 @@ npm run test:instagram:url -- "https://www.instagram.com/nike/" --sessionid=seu_
 Os resultados sao salvos em `output/google-{query}-{timestamp}.csv`:
 
 ```csv
-query,totalPages,totalResults,outputExtractedAt,title,url,description,source,status,resultExtractedAt,page
-termo de busca,3,45,2026-02-19T14:30:00.000Z,Titulo do resultado,https://exemplo.com,Descricao do resultado...,google,pending_instagram,2026-02-19T14:30:00.000Z,1
+query,totalPages,totalResults,outputExtractedAt,title,url,description,source,status,resultExtractedAt,page,instagramUsername,instagramName,instagramPublicacoes,instagramSeguidores,instagramSeguindo,instagramBio,instagramLink,instagramExtractedAt
+termo de busca,3,45,2026-02-21T10:00:00.000Z,Titulo do resultado,https://www.instagram.com/nike/,Descricao...,google,instagram_ok,2026-02-21T10:00:05.000Z,1,nike,Nike,5000000,300000000,1000,"Just Do It",https://nike.com,2026-02-21T10:00:05.000Z
 ```
 
-O campo `status: "pending_instagram"` indica que o resultado esta pronto para ser processado pelo futuro Instagram Agent.
+Campos de status:
+- `not_instagram` - resultado nao e perfil do Instagram
+- `instagram_ok` - perfil extratido com sucesso
+- `instagram_failed` - falha na extracao
+- `duplicate_instagram` - perfil ja processado
+- `instagram_skipped_limit` - ignorado por limite
 
 ## Desenvolvimento
 
