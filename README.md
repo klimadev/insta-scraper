@@ -17,6 +17,9 @@ insta-launcher google "termo de busca"
 
 # Com paginacao (padrao: 3 paginas)
 insta-launcher google "termo de busca" --pages=5
+
+# Exportar somente linhas com telefone extraido
+insta-launcher google "termo de busca" --only-phones
 ```
 
 ### CAPTCHA
@@ -60,9 +63,14 @@ npm run test:instagram:url -- "https://www.instagram.com/nike/" --sessionid=seu_
 Os resultados sao salvos em `output/google-{query}-{timestamp}.csv`:
 
 ```csv
-query,totalPages,totalResults,outputExtractedAt,title,url,description,source,status,resultExtractedAt,page,instagramUsername,instagramName,instagramPublicacoes,instagramSeguidores,instagramSeguindo,instagramBio,instagramLink,instagramExtractedAt
-termo de busca,3,45,2026-02-21T10:00:00.000Z,Titulo do resultado,https://www.instagram.com/nike/,Descricao...,google,instagram_ok,2026-02-21T10:00:05.000Z,1,nike,Nike,5000000,300000000,1000,"Just Do It",https://nike.com,2026-02-21T10:00:05.000Z
+query,totalPages,totalResults,outputExtractedAt,title,url,description,source,status,resultExtractedAt,page,instagramUsername,instagramName,instagramPublicacoes,instagramSeguidores,instagramSeguindo,instagramBio,instagramLink,instagramPhonesCount,instagramPhones,instagramPhonesE164,instagramPhonesJson,instagramPrimaryPhone,instagramPrimaryPhoneE164,instagramPrimaryPhoneConfidence,instagramPhonesConfidenceJson,instagramPhonesSourcesJson,instagramExtractedAt
+termo de busca,3,45,2026-02-21T10:00:00.000Z,Titulo do resultado,https://www.instagram.com/nike/,Descricao...,google,instagram_ok,2026-02-21T10:00:05.000Z,1,nike,Nike,5000000,300000000,1000,"Just Do It",https://wa.me/5511999999999,1,"+55 (11) 99999-9999",+5511999999999,"[""+55 (11) 99999-9999""]","+55 (11) 99999-9999",+5511999999999,high,"{""+5511999999999"":""high""}","{""+5511999999999"": [""profile_link_wa_path""]}",2026-02-21T10:00:05.000Z
 ```
+
+Novos campos de telefone:
+- `instagramPrimaryPhone*` - telefone principal escolhido por maior confianca (`high > medium > low`)
+- `instagramPhonesConfidenceJson` - confianca por telefone E.164
+- `instagramPhonesSourcesJson` - origem por telefone (bio, link, query, wa.me, etc.)
 
 Campos de status:
 - `not_instagram` - resultado nao e perfil do Instagram

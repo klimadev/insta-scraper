@@ -5,6 +5,13 @@ export type InstagramResultStatus =
   | 'duplicate_instagram'
   | 'instagram_skipped_limit';
 
+export interface InstagramPhoneDetail {
+  phonePtBr: string;
+  phoneE164: string;
+  confidence: 'low' | 'medium' | 'high';
+  sources: string[];
+}
+
 export interface SearchResult {
   title: string;
   url: string;
@@ -21,6 +28,12 @@ export interface SearchResult {
   instagramSeguindo?: number;
   instagramBio?: string;
   instagramLink?: string;
+  instagramPhonesPtBr?: string[];
+  instagramPhonesE164?: string[];
+  instagramPhonesDetails?: InstagramPhoneDetail[];
+  instagramPrimaryPhonePtBr?: string;
+  instagramPrimaryPhoneE164?: string;
+  instagramPrimaryPhoneConfidence?: 'low' | 'medium' | 'high';
   instagramExtractedAt?: string;
 }
 
@@ -36,11 +49,13 @@ export interface GoogleSearchConfig {
   query: string;
   maxPages?: number;
   outputFile?: string;
+  onlyWithPhones?: boolean;
 }
 
 export const DEFAULT_CONFIG: Required<Omit<GoogleSearchConfig, 'query'>> = {
   maxPages: 3,
-  outputFile: ''
+  outputFile: '',
+  onlyWithPhones: false
 };
 
 export interface ExtractedResult {

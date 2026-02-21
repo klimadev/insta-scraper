@@ -11,6 +11,7 @@ function showHelp(): void {
   console.log('');
   console.log('Opções Google:');
   console.log('  --pages=N   Número de páginas (padrão: 3)');
+  console.log('  --only-phones   Exporta apenas resultados com telefone');
   console.log('');
   console.log('Sem argumentos: inicia o wizard interativo');
   console.log('');
@@ -20,17 +21,20 @@ function showHelp(): void {
 async function runGoogle(args: string[]): Promise<void> {
   if (args.length === 0) {
     console.log('');
-    console.log('Uso: insta-launcher google "termo de busca" [--pages=3]');
+    console.log('Uso: insta-launcher google "termo de busca" [--pages=3] [--only-phones]');
     console.log('');
     process.exit(1);
   }
 
   let query = '';
   let maxPages = 3;
+  let onlyWithPhones = false;
 
   for (const arg of args) {
     if (arg.startsWith('--pages=')) {
       maxPages = parseInt(arg.split('=')[1], 10) || 3;
+    } else if (arg === '--only-phones') {
+      onlyWithPhones = true;
     } else if (arg === '--help' || arg === '-h') {
       showHelp();
     } else if (!arg.startsWith('--')) {
@@ -44,7 +48,8 @@ async function runGoogle(args: string[]): Promise<void> {
   try {
     const output = await runGoogleSearch({
       query,
-      maxPages
+      maxPages,
+      onlyWithPhones
     });
 
     metrics.endOperation('google_search', {

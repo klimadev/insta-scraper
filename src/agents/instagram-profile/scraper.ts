@@ -2,6 +2,7 @@ import { Page, BrowserContext } from 'playwright';
 import { InstagramProfile } from './types';
 import { logger } from '../../cli/logger';
 import { resolveInstagramSessionIdFromEnv } from './session';
+import { extractBrazilPhones } from '../../utils/phone';
 
 const INSTAGRAM_PROFILE_SELECTORS = {
   headerSection: 'header section',
@@ -126,6 +127,10 @@ export class InstagramProfileScraper {
       if (!profileData.username) {
         return null;
       }
+
+      const extractedPhones = extractBrazilPhones({
+        bio: profileData.bio || ''
+      });
       
       return {
         username: profileData.username || '',
@@ -134,6 +139,12 @@ export class InstagramProfileScraper {
         seguidores: profileData.seguidores || 0,
         seguindo: profileData.seguindo || 0,
         bio: profileData.bio || '',
+        phonesPtBr: extractedPhones.phonesPtBr,
+        phonesE164: extractedPhones.phonesE164,
+        phonesDetails: extractedPhones.phonesDetails,
+        primaryPhonePtBr: extractedPhones.primaryPhonePtBr,
+        primaryPhoneE164: extractedPhones.primaryPhoneE164,
+        primaryPhoneConfidence: extractedPhones.primaryPhoneConfidence,
         url: profileUrl,
         extractedAt: new Date().toISOString()
       };
@@ -297,6 +308,11 @@ export class InstagramProfileScraper {
 
     const bioLinks = this.normalizeBioLinks(user.bio_links, user.external_url);
     const primaryLink = bioLinks[0];
+    const extractedPhones = extractBrazilPhones({
+      bio: user.biography || '',
+      link: primaryLink?.url,
+      bioLinks
+    });
 
     return {
       username: user.username,
@@ -309,6 +325,12 @@ export class InstagramProfileScraper {
       link: primaryLink?.url,
       linkTitulo: primaryLink?.title,
       bioLinks,
+      phonesPtBr: extractedPhones.phonesPtBr,
+      phonesE164: extractedPhones.phonesE164,
+      phonesDetails: extractedPhones.phonesDetails,
+      primaryPhonePtBr: extractedPhones.primaryPhonePtBr,
+      primaryPhoneE164: extractedPhones.primaryPhoneE164,
+      primaryPhoneConfidence: extractedPhones.primaryPhoneConfidence,
       extractedAt: new Date().toISOString()
     };
   }

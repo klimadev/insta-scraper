@@ -4,6 +4,13 @@ export interface BioLink {
   link_type?: string;
 }
 
+export interface InstagramPhoneDetail {
+  phonePtBr: string;
+  phoneE164: string;
+  confidence: 'low' | 'medium' | 'high';
+  sources: string[];
+}
+
 export interface InstagramProfile {
   username: string;
   name: string;
@@ -15,6 +22,12 @@ export interface InstagramProfile {
   link?: string;
   linkTitulo?: string;
   bioLinks?: BioLink[];
+  phonesPtBr?: string[];
+  phonesE164?: string[];
+  phonesDetails?: InstagramPhoneDetail[];
+  primaryPhonePtBr?: string;
+  primaryPhoneE164?: string;
+  primaryPhoneConfidence?: 'low' | 'medium' | 'high';
   extractedAt: string;
 }
 

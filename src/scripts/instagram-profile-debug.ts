@@ -99,12 +99,38 @@ function writeInstagramProfileCsv(filePath: string, profile: {
   link?: string;
   linkTitulo?: string;
   bioLinks?: Array<{ title?: string; url?: string; link_type?: string }>;
+  phonesPtBr?: string[];
+  phonesE164?: string[];
+  phonesDetails?: Array<{
+    phonePtBr: string;
+    phoneE164: string;
+    confidence: 'low' | 'medium' | 'high';
+    sources: string[];
+  }>;
+  primaryPhonePtBr?: string;
+  primaryPhoneE164?: string;
+  primaryPhoneConfidence?: 'low' | 'medium' | 'high';
   extractedAt: string;
 }): void {
   const bioLinksCount = profile.bioLinks?.length || 0;
   const bioLinksUrls = profile.bioLinks?.map(l => l.url || '').join(' | ') || '';
   const bioLinksTitulos = profile.bioLinks?.map(l => l.title || '').join(' | ') || '';
   const bioLinksJson = profile.bioLinks ? JSON.stringify(profile.bioLinks) : '';
+  const phonesPtBr = profile.phonesPtBr || [];
+  const phonesE164 = profile.phonesE164 || [];
+  const phonesDetails = profile.phonesDetails || [];
+  const phonesConfidenceJson = phonesDetails.length > 0
+    ? JSON.stringify(phonesDetails.reduce((acc, item) => {
+      acc[item.phoneE164] = item.confidence;
+      return acc;
+    }, {} as Record<string, 'low' | 'medium' | 'high'>))
+    : '';
+  const phonesSourcesJson = phonesDetails.length > 0
+    ? JSON.stringify(phonesDetails.reduce((acc, item) => {
+      acc[item.phoneE164] = item.sources;
+      return acc;
+    }, {} as Record<string, string[]>))
+    : '';
 
   const header = toCsvRow([
     'username',
@@ -119,6 +145,15 @@ function writeInstagramProfileCsv(filePath: string, profile: {
     'bioLinksUrls',
     'bioLinksTitulos',
     'bioLinksJson',
+    'phonesCount',
+    'phonesPtBr',
+    'phonesE164',
+    'phonesJson',
+    'primaryPhonePtBr',
+    'primaryPhoneE164',
+    'primaryPhoneConfidence',
+    'phonesConfidenceJson',
+    'phonesSourcesJson',
     'url',
     'extractedAt'
   ]);
@@ -136,6 +171,15 @@ function writeInstagramProfileCsv(filePath: string, profile: {
     bioLinksUrls,
     bioLinksTitulos,
     bioLinksJson,
+    phonesPtBr.length,
+    phonesPtBr.join(' | '),
+    phonesE164.join(' | '),
+    phonesPtBr.length > 0 ? JSON.stringify(phonesPtBr) : '',
+    profile.primaryPhonePtBr || '',
+    profile.primaryPhoneE164 || '',
+    profile.primaryPhoneConfidence || '',
+    phonesConfidenceJson,
+    phonesSourcesJson,
     profile.url,
     profile.extractedAt
   ]);

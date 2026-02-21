@@ -74,7 +74,7 @@ async function runGoogleWizard(metrics: MetricsCollector): Promise<void> {
     {
       type: 'input',
       name: 'query',
-      message: 'Termo de busca:',
+      message: 'Termo de busca (substitui "clinica" na dork):',
       validate: (input: string) => {
         if (!input.trim()) {
           return 'O termo de busca nao pode estar vazio.';
@@ -93,6 +93,12 @@ async function runGoogleWizard(metrics: MetricsCollector): Promise<void> {
         }
         return true;
       }
+    },
+    {
+      type: 'confirm',
+      name: 'onlyWithPhones',
+      message: 'Exportar somente resultados com telefone?',
+      default: false
     }
   ]);
 
@@ -101,11 +107,12 @@ async function runGoogleWizard(metrics: MetricsCollector): Promise<void> {
   try {
     const output = await runGoogleSearch({
       query: answers.query.trim(),
-      maxPages: answers.maxPages
+      maxPages: answers.maxPages,
+      onlyWithPhones: answers.onlyWithPhones
     });
 
     metrics.endOperation('google_search', {
-      query: answers.query,
+      query: answers.query.trim(),
       resultsCount: output.totalResults,
       pagesScanned: output.totalPages
     });

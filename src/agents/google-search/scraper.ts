@@ -49,13 +49,15 @@ export class GoogleSearchScraper {
 
   async search(config: GoogleSearchConfig): Promise<SearchOutput> {
     const finalConfig = { ...DEFAULT_CONFIG, ...config };
+    const googleDorkQuery = this.buildGoogleDorkQuery(finalConfig.query);
     
     this.validateQuery(finalConfig.query);
+    logger.info(`Dork aplicada: ${googleDorkQuery}`);
     
     await this.launchBrowser();
     
     try {
-      await this.performSearch(finalConfig.query);
+      await this.performSearch(googleDorkQuery);
       
       const results = await this.scrapeMultiplePages(
         finalConfig.query,
@@ -68,6 +70,19 @@ export class GoogleSearchScraper {
     } finally {
       await this.closeBrowser();
     }
+  }
+
+  private buildGoogleDorkQuery(term: string): string {
+    const sanitizedTerm = term
+      .trim()
+      .replace(/\s+/g, ' ')
+      .replace(/"/g, '');
+
+    const termWithoutAccents = sanitizedTerm
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+
+    return `site:instagram.com ("wa.me" OR "whatsapp" OR "+55") AND ("${sanitizedTerm}" OR "${termWithoutAccents}") -help -support -blog -p`;
   }
 
   private validateQuery(query: string): void {
@@ -669,6 +684,12 @@ export class GoogleSearchScraper {
       result.instagramSeguindo = profile.seguindo;
       result.instagramBio = profile.bio;
       result.instagramLink = profile.link;
+      result.instagramPhonesPtBr = profile.phonesPtBr;
+      result.instagramPhonesE164 = profile.phonesE164;
+      result.instagramPhonesDetails = profile.phonesDetails;
+      result.instagramPrimaryPhonePtBr = profile.primaryPhonePtBr;
+      result.instagramPrimaryPhoneE164 = profile.primaryPhoneE164;
+      result.instagramPrimaryPhoneConfidence = profile.primaryPhoneConfidence;
       result.instagramExtractedAt = profile.extractedAt;
     }
   }
@@ -685,6 +706,12 @@ export class GoogleSearchScraper {
     console.log(`  Seguindo: ${profile.seguindo.toLocaleString('pt-BR')}`);
     if (profile.bio) {
       console.log(`  Bio: ${profile.bio}`);
+    }
+    if (profile.phonesPtBr && profile.phonesPtBr.length > 0) {
+      console.log(`  Telefones: ${profile.phonesPtBr.join(' | ')}`);
+    }
+    if (profile.primaryPhonePtBr && profile.primaryPhoneConfidence) {
+      console.log(`  Telefone principal: ${profile.primaryPhonePtBr} (${profile.primaryPhoneConfidence})`);
     }
     console.log('════════════════════════════════════════════════════════');
     console.log('');
