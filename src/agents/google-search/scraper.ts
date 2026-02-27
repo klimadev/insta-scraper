@@ -82,7 +82,7 @@ export class GoogleSearchScraper {
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '');
 
-    return `site:instagram.com ("wa.me" OR "whatsapp" OR "+55") AND ("${sanitizedTerm}" OR "${termWithoutAccents}") -help -support -blog -p lr:lang_pt-419`;
+    return `site:instagram.com ("wa.me" OR "whatsapp" OR "+55") AND ("${sanitizedTerm}" OR "${termWithoutAccents}") -help -support -blog -p lang_lr:pt`;
   }
 
   private validateQuery(query: string): void {
