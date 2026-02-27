@@ -82,7 +82,7 @@ export class GoogleSearchScraper {
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '');
 
-    return `site:instagram.com ("wa.me" OR "whatsapp" OR "+55") AND ("${sanitizedTerm}" OR "${termWithoutAccents}") -help -support -blog -p lang_lr:pt`;
+    return `site:instagram.com ("wa.me" OR "whatsapp" OR "+55") AND ("${sanitizedTerm}" OR "${termWithoutAccents}") -help -support -blog -p`;
   }
 
   private validateQuery(query: string): void {
@@ -163,6 +163,13 @@ export class GoogleSearchScraper {
       await this.page.keyboard.press('Enter');
 
       await this.page.waitForLoadState('domcontentloaded');
+      
+      const currentUrl = this.page.url();
+      if (!currentUrl.includes('lr=lang_pt')) {
+        const separator = currentUrl.includes('?') ? '&' : '?';
+        await this.page.goto(`${currentUrl}${separator}lr=lang_pt`, { waitUntil: 'domcontentloaded' });
+      }
+
       await this.waitForCaptchaResolution();
       await this.waitForResultsReady();
       
